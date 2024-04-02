@@ -1,4 +1,3 @@
-'use strict';
 /*
  * Copyright (C) 2011 The Android Open Source Project
  *
@@ -15,17 +14,18 @@
  * limitations under the License.
  */
 
-const assert = require('assert');
-const CachePolicy = require('../src');
+import CachePolicy from '../src';
 
-describe('okhttp tests', function() {
-    it('response caching by response code', function() {
+describe('okhttp tests', () => {
+    test('response caching by response code', () => {
         // Test each documented HTTP/1.1 code, plus the first unused value in each range.
         // http://www.w3.org/Protocols/rfc2616/rfc2616-sec10.html
 
-        assertCached(false, 100);
-        assertCached(false, 101);
-        assertCached(false, 102);
+        // NOTE: RangeError: init["status"] must be in the range of 200 to 599, inclusive.
+        // assertCached(false, 100);
+        // assertCached(false, 101);
+        // assertCached(false, 102);
+
         assertCached(true, 200);
         assertCached(false, 201);
         assertCached(false, 202);
@@ -73,400 +73,423 @@ describe('okhttp tests', function() {
         assertCached(false, 506);
     });
 
-    function assertCached(shouldPut, responseCode) {
-        let expectedResponseCode = responseCode;
-
-        const mockResponse = {
-            headers: {
-                'last-modified': formatDate(-1, 3600),
-                expires: formatDate(1, 3600),
-                'www-authenticate': 'challenge',
-            },
-            status: responseCode,
-            body: 'ABCDE',
-        };
+    function assertCached(shouldPut: boolean, responseCode: number) {
+        const mockResponse = new Response(
+            responseCode == 204 || responseCode == 205 || responseCode === 304
+                ? null
+                : 'ABCDE',
+            {
+                headers: {
+                    'last-modified': formatDate(-1, 3600),
+                    expires: formatDate(1, 3600),
+                    'www-authenticate': 'challenge',
+                },
+                status: responseCode,
+            }
+        );
         if (responseCode == 407) {
-            mockResponse.headers['proxy-authenticate'] =
-                'Basic realm="protected area"';
+            mockResponse.headers.set(
+                'proxy-authenticate',
+                'Basic realm="protected area"'
+            );
         } else if (responseCode == 401) {
-            mockResponse.headers['www-authenticate'] =
-                'Basic realm="protected area"';
-        } else if (responseCode == 204 || responseCode == 205) {
-            mockResponse.body = ''; // We forbid bodies for 204 and 205.
+            mockResponse.headers.set(
+                'www-authenticate',
+                'Basic realm="protected area"'
+            );
         }
 
-        const request = { url: '/', headers: {} };
+        const request = new Request('http://localhost/', {
+            headers: {},
+        });
 
         const cache = new CachePolicy(request, mockResponse, { shared: false });
 
-        assert.equal(shouldPut, cache.storable());
+        expect(cache.storable()).toEqual(shouldPut);
     }
 
-    it('default expiration date fully cached for less than24 hours', function() {
+    test('default expiration date fully cached for less than24 hours', () => {
         //      last modified: 105 seconds ago
         //             served:   5 seconds ago
         //   default lifetime: (105 - 5) / 10 = 10 seconds
         //            expires:  10 seconds from served date = 5 seconds from now
         const cache = new CachePolicy(
-            { headers: {} },
-            {
+            new Request('http://localhost/'),
+            new Response('A', {
                 headers: {
                     'last-modified': formatDate(-105, 1),
                     date: formatDate(-5, 1),
                 },
-                body: 'A',
-            },
+            }),
             { shared: false }
         );
 
-        assert(cache.timeToLive() > 4000);
+        expect(cache.timeToLive()).toBeGreaterThan(4000);
     });
 
-    it('default expiration date fully cached for more than24 hours', function() {
+    test('default expiration date fully cached for more than24 hours', () => {
         //      last modified: 105 days ago
         //             served:   5 days ago
         //   default lifetime: (105 - 5) / 10 = 10 days
         //            expires:  10 days from served date = 5 days from now
         const cache = new CachePolicy(
-            { headers: {} },
-            {
+            new Request('http://localhost/'),
+            new Response('A', {
                 headers: {
                     'last-modified': formatDate(-105, 3600 * 24),
                     date: formatDate(-5, 3600 * 24),
                 },
-                body: 'A',
-            },
+            }),
             { shared: false }
         );
 
-        assert(cache.maxAge() >= 10 * 3600 * 24);
-        assert(cache.timeToLive() + 1000 >= 5 * 3600 * 24);
+        expect(cache.maxAge()).toBeGreaterThanOrEqual(10 * 3600 * 24);
+        expect(cache.timeToLive() + 1000).toBeGreaterThanOrEqual(5 * 3600 * 24);
     });
 
-    it('max age in the past with date header but no last modified header', function() {
+    test('max age in the past with date header but no last modified header', () => {
         // Chrome interprets max-age relative to the local clock. Both our cache
         // and Firefox both use the earlier of the local and server's clock.
         const cache = new CachePolicy(
-            { headers: {} },
-            {
+            new Request('http://localhost/'),
+            new Response(null, {
                 headers: {
                     date: formatDate(-120, 1),
                     'cache-control': 'max-age=60',
                 },
-            },
+            }),
             { shared: false }
         );
 
-        assert(!cache.stale());
+        expect(cache.stale()).toBeFalsy();
     });
 
-    it('maxAge timetolive', function() {
+    test('maxAge timetolive', () => {
         const cache = new CachePolicy(
-            { headers: {} },
-            {
+            new Request('http://localhost/'),
+            new Response(null, {
                 headers: {
                     date: formatDate(120, 1),
                     'cache-control': 'max-age=60',
                 },
-            },
+            }),
             { shared: false }
         );
         const now = Date.now();
-        cache.now = () => now
+        cache.now = () => now;
 
-        assert(!cache.stale());
-        assert.equal(cache.timeToLive(), 60000);
+        expect(cache.stale()).toBeFalsy();
+        expect(cache.timeToLive()).toEqual(60000);
     });
 
-    it('stale-if-error timetolive', function() {
+    test('stale-if-error timetolive', () => {
         const cache = new CachePolicy(
-            { headers: {} },
-            {
+            new Request('http://localhost/'),
+            new Response(null, {
                 headers: {
                     date: formatDate(120, 1),
                     'cache-control': 'max-age=60, stale-if-error=200',
                 },
-            },
+            }),
             { shared: false }
         );
 
-        assert(!cache.stale());
-        assert.equal(cache.timeToLive(), 260000);
+        expect(cache.stale()).toBeFalsy();
+        expect(cache.timeToLive()).toEqual(260000);
     });
 
-    it('stale-while-revalidate timetolive', function() {
+    test('stale-while-revalidate timetolive', () => {
         const cache = new CachePolicy(
-            { headers: {} },
-            {
+            new Request('http://localhost/'),
+            new Response(null, {
                 headers: {
                     date: formatDate(120, 1),
                     'cache-control': 'max-age=60, stale-while-revalidate=200',
                 },
-            },
+            }),
             { shared: false }
         );
 
-        assert(!cache.stale());
-        assert.equal(cache.timeToLive(), 260000);
+        expect(cache.stale()).toBeFalsy();
+        expect(cache.timeToLive()).toEqual(260000);
     });
 
-    it('max age preferred over lower shared max age', function() {
+    test('max age preferred over lower shared max age', () => {
         const cache = new CachePolicy(
-            { headers: {} },
-            {
+            new Request('http://localhost/'),
+            new Response(null, {
                 headers: {
                     date: formatDate(-2, 60),
                     'cache-control': 's-maxage=60, max-age=180',
                 },
-            },
+            }),
             { shared: false }
         );
 
-        assert.equal(cache.maxAge(), 180);
+        expect(cache.maxAge()).toBe(180);
     });
 
-    it('max age preferred over higher max age', function() {
+    test('max age preferred over higher max age', () => {
         const cache = new CachePolicy(
-            { headers: {} },
-            {
+            new Request('http://localhost/'),
+            new Response(null, {
                 headers: {
-                    age: 360,
+                    age: '360',
                     'cache-control': 's-maxage=60, max-age=180',
                 },
-            },
+            }),
             { shared: false }
         );
 
-        assert(cache.stale());
+        expect(cache.stale()).toBeTruthy();
     });
 
-    it('request method options is not cached', function() {
+    test('request method options is not cached', () => {
         testRequestMethodNotCached('OPTIONS');
     });
 
-    it('request method put is not cached', function() {
+    test('request method put is not cached', () => {
         testRequestMethodNotCached('PUT');
     });
 
-    it('request method delete is not cached', function() {
+    test('request method delete is not cached', () => {
         testRequestMethodNotCached('DELETE');
     });
 
-    it('request method trace is not cached', function() {
-        testRequestMethodNotCached('TRACE');
-    });
+    // Error: 'TRACE' HTTP method is unsupported.
+    // test('request method trace is not cached', () => {
+    //     testRequestMethodNotCached('TRACE');
+    // });
 
-    function testRequestMethodNotCached(method) {
+    function testRequestMethodNotCached(method: string) {
         // 1. seed the cache (potentially)
         // 2. expect a cache hit or miss
         const cache = new CachePolicy(
-            { method, headers: {} },
-            {
+            new Request('http://localhost/', { method, headers: {} }),
+            new Response(null, {
                 headers: {
                     expires: formatDate(1, 3600),
                 },
-            },
+            }),
             { shared: false }
         );
 
-        assert(cache.stale());
+        expect(cache.stale()).toBeTruthy();
     }
 
-    it('etag and expiration date in the future', function() {
+    test('etag and expiration date in the future', () => {
         const cache = new CachePolicy(
-            { headers: {} },
-            {
+            new Request('http://localhost/'),
+            new Response(null, {
                 headers: {
                     etag: 'v1',
                     'last-modified': formatDate(-2, 3600),
                     expires: formatDate(1, 3600),
                 },
-            },
+            }),
             { shared: false }
         );
 
-        assert(cache.timeToLive() > 0);
+        expect(cache.timeToLive()).toBeGreaterThan(0);
     });
 
-    it('client side no store', function() {
+    test('client side no store', () => {
         const cache = new CachePolicy(
-            {
+            new Request('http://localhost/', {
                 headers: {
                     'cache-control': 'no-store',
                 },
-            },
-            {
+            }),
+            new Response(null, {
                 headers: {
                     'cache-control': 'max-age=60',
                 },
-            },
+            }),
             { shared: false }
         );
 
-        assert(!cache.storable());
+        expect(cache.storable()).toBeFalsy();
     });
 
-    it('request max age', function() {
+    test('request max age', () => {
         const cache = new CachePolicy(
-            { headers: {} },
-            {
+            new Request('http://localhost/'),
+            new Response(null, {
                 headers: {
                     'last-modified': formatDate(-2, 3600),
-                    age: 60,
+                    age: '60',
                     expires: formatDate(1, 3600),
                 },
-            },
+            }),
             { shared: false }
         );
 
-        assert(!cache.stale());
-        assert(cache.age() >= 60);
+        expect(cache.stale()).toBeFalsy();
+        expect(cache.age()).toBeGreaterThanOrEqual(60);
 
-        assert(
-            cache.satisfiesWithoutRevalidation({
-                headers: {
-                    'cache-control': 'max-age=90',
-                },
-            })
-        );
+        expect(
+            cache.satisfiesWithoutRevalidation(
+                new Request('http://localhost/', {
+                    headers: {
+                        'cache-control': 'max-age=90',
+                    },
+                })
+            )
+        ).toBeTruthy();
 
-        assert(
-            !cache.satisfiesWithoutRevalidation({
-                headers: {
-                    'cache-control': 'max-age=30',
-                },
-            })
-        );
+        expect(
+            cache.satisfiesWithoutRevalidation(
+                new Request('http://localhost/', {
+                    headers: {
+                        'cache-control': 'max-age=30',
+                    },
+                })
+            )
+        ).toBeFalsy();
     });
 
-    it('request min fresh', function() {
+    test('request min fresh', () => {
         const cache = new CachePolicy(
-            { headers: {} },
-            {
+            new Request('http://localhost/'),
+            new Response(null, {
                 headers: {
                     'cache-control': 'max-age=60',
                 },
-            },
+            }),
             { shared: false }
         );
 
-        assert(!cache.stale());
+        expect(cache.stale()).toBeFalsy();
 
-        assert(
-            !cache.satisfiesWithoutRevalidation({
-                headers: {
-                    'cache-control': 'min-fresh=120',
-                },
-            })
-        );
+        expect(
+            cache.satisfiesWithoutRevalidation(
+                new Request('http://localhost/', {
+                    headers: {
+                        'cache-control': 'min-fresh=120',
+                    },
+                })
+            )
+        ).toBeFalsy();
 
-        assert(
-            cache.satisfiesWithoutRevalidation({
-                headers: {
-                    'cache-control': 'min-fresh=10',
-                },
-            })
-        );
+        expect(
+            cache.satisfiesWithoutRevalidation(
+                new Request('http://localhost/', {
+                    headers: {
+                        'cache-control': 'min-fresh=10',
+                    },
+                })
+            )
+        ).toBeTruthy();
     });
 
-    it('request max stale', function() {
+    test('request max stale', () => {
         const cache = new CachePolicy(
-            { headers: {} },
-            {
+            new Request('http://localhost/'),
+            new Response(null, {
                 headers: {
                     'cache-control': 'max-age=120',
-                    age: 4*60,
+                    age: String(4 * 60),
                 },
-            },
+            }),
             { shared: false }
         );
 
-        assert(cache.stale());
+        expect(cache.stale()).toBeTruthy();
 
-        assert(
-            cache.satisfiesWithoutRevalidation({
-                headers: {
-                    'cache-control': 'max-stale=180',
-                },
-            })
-        );
+        expect(
+            cache.satisfiesWithoutRevalidation(
+                new Request('http://localhost/', {
+                    headers: {
+                        'cache-control': 'max-stale=180',
+                    },
+                })
+            )
+        ).toBeTruthy();
 
-        assert(
-            cache.satisfiesWithoutRevalidation({
-                headers: {
-                    'cache-control': 'max-stale',
-                },
-            })
-        );
+        expect(
+            cache.satisfiesWithoutRevalidation(
+                new Request('http://localhost/', {
+                    headers: {
+                        'cache-control': 'max-stale',
+                    },
+                })
+            )
+        ).toBeTruthy();
 
-        assert(
-            !cache.satisfiesWithoutRevalidation({
-                headers: {
-                    'cache-control': 'max-stale=10',
-                },
-            })
-        );
+        expect(
+            cache.satisfiesWithoutRevalidation(
+                new Request('http://localhost/', {
+                    headers: {
+                        'cache-control': 'max-stale=10',
+                    },
+                })
+            )
+        ).toBeFalsy();
     });
 
-    it('request max stale not honored with must revalidate', function() {
+    test('request max stale not honored with must revalidate', () => {
         const cache = new CachePolicy(
-            { headers: {} },
-            {
+            new Request('http://localhost/'),
+            new Response(null, {
                 headers: {
                     'cache-control': 'max-age=120, must-revalidate',
-                    age: 360,
+                    age: '360',
                 },
-            },
+            }),
             { shared: false }
         );
 
-        assert(cache.stale());
+        expect(cache.stale()).toBeTruthy();
 
-        assert(
-            !cache.satisfiesWithoutRevalidation({
-                headers: {
-                    'cache-control': 'max-stale=180',
-                },
-            })
-        );
+        expect(
+            cache.satisfiesWithoutRevalidation(
+                new Request('http://localhost/', {
+                    headers: {
+                        'cache-control': 'max-stale=180',
+                    },
+                })
+            )
+        ).toBeFalsy();
 
-        assert(
-            !cache.satisfiesWithoutRevalidation({
-                headers: {
-                    'cache-control': 'max-stale',
-                },
-            })
-        );
+        expect(
+            cache.satisfiesWithoutRevalidation(
+                new Request('http://localhost/', {
+                    headers: {
+                        'cache-control': 'max-stale',
+                    },
+                })
+            )
+        ).toBeFalsy();
     });
 
-    it('get headers deletes cached100 level warnings', function() {
+    test('get headers deletes cached100 level warnings', () => {
         const cache = new CachePolicy(
-            { headers: {} },
-            {
+            new Request('http://localhost/'),
+            new Response(null, {
                 headers: {
                     warning: '199 test danger, 200 ok ok',
                 },
-            }
+            })
         );
 
-        assert.equal('200 ok ok', cache.responseHeaders().warning);
+        expect(cache.responseHeaders().get('warning')).toBe('200 ok ok');
     });
 
-    it('do not cache partial response', function() {
+    test('do not cache partial response', () => {
         const cache = new CachePolicy(
-            { headers: {} },
-            {
+            new Request('http://localhost/'),
+            new Response(null, {
                 status: 206,
                 headers: {
                     'content-range': 'bytes 100-100/200',
                     'cache-control': 'max-age=60',
                 },
-            }
+            })
         );
-        assert(!cache.storable());
+        expect(cache.storable()).toBeFalsy();
     });
 
-    function formatDate(delta, unit) {
+    function formatDate(delta: number, unit: number) {
         return new Date(Date.now() + delta * unit * 1000).toUTCString();
     }
 });
