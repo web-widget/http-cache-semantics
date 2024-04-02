@@ -1,90 +1,110 @@
-'use strict';
+import CachePolicy from '../src';
 
-const assert = require('assert');
-const CachePolicy = require('..');
-
-const publicCacheableResponse = {
+const publicCacheableResponse = new Response(null, {
     headers: { 'cache-control': 'public, max-age=222' },
-};
-const cacheableResponse = { headers: { 'cache-control': 'max-age=111' } };
+});
+const cacheableResponse = new Response(null, {
+    headers: { 'cache-control': 'max-age=111' },
+});
 
-describe('Request properties', function() {
-    it('No store kills cache', function() {
+describe('Request properties', () => {
+    test('No store kills cache', () => {
         const cache = new CachePolicy(
-            { method: 'GET', headers: { 'cache-control': 'no-store' } },
+            new Request('http://localhost/', {
+                method: 'GET',
+                headers: { 'cache-control': 'no-store' },
+            }),
             publicCacheableResponse
         );
-        assert(cache.stale());
-        assert(!cache.storable());
+        expect(cache.stale()).toBeTruthy();
+        expect(cache.storable()).toBeFalsy();
     });
 
-    it('POST not cacheable by default', function() {
+    test('POST not cacheable by default', () => {
         const cache = new CachePolicy(
-            { method: 'POST', headers: {} },
-            { headers: { 'cache-control': 'public' } }
+            new Request('http://localhost/', { method: 'POST', headers: {} }),
+            new Response(null, { headers: { 'cache-control': 'public' } })
         );
-        assert(cache.stale());
-        assert(!cache.storable());
+        expect(cache.stale()).toBeTruthy();
+        expect(cache.storable()).toBeFalsy();
     });
 
-    it('POST cacheable explicitly', function() {
+    test('POST cacheable explicitly', () => {
         const cache = new CachePolicy(
-            { method: 'POST', headers: {} },
+            new Request('http://localhost/', { method: 'POST', headers: {} }),
             publicCacheableResponse
         );
-        assert(!cache.stale());
-        assert(cache.storable());
+        expect(cache.stale()).toBeFalsy();
+        expect(cache.storable()).toBeTruthy();
     });
 
-    it('Public cacheable auth is OK', function() {
+    test('Public cacheable auth is OK', () => {
         const cache = new CachePolicy(
-            { method: 'GET', headers: { authorization: 'test' } },
+            new Request('http://localhost/', {
+                method: 'GET',
+                headers: { authorization: 'test' },
+            }),
             publicCacheableResponse
         );
-        assert(!cache.stale());
-        assert(cache.storable());
+        expect(cache.stale()).toBeFalsy();
+        expect(cache.storable()).toBeTruthy();
     });
 
-    it('Proxy cacheable auth is OK', function() {
+    test('Proxy cacheable auth is OK', () => {
         const cache = new CachePolicy(
-            { method: 'GET', headers: { authorization: 'test' } },
-            { headers: { 'cache-control': 'max-age=0,s-maxage=12' } }
+            new Request('http://localhost/', {
+                method: 'GET',
+                headers: { authorization: 'test' },
+            }),
+            new Response(null, {
+                headers: { 'cache-control': 'max-age=0,s-maxage=12' },
+            })
         );
-        assert(!cache.stale());
-        assert(cache.storable());
+        expect(cache.stale()).toBeFalsy();
+        expect(cache.storable()).toBeTruthy();
 
         const cache2 = CachePolicy.fromObject(
             JSON.parse(JSON.stringify(cache.toObject()))
         );
-        assert(cache2 instanceof CachePolicy);
-        assert(!cache2.stale());
-        assert(cache2.storable());
+        expect(cache2 instanceof CachePolicy).toBeTruthy();
+        expect(cache2.stale()).toBeFalsy();
+        expect(cache2.storable()).toBeTruthy();
     });
 
-    it('Private auth is OK', function() {
+    test('Private auth is OK', () => {
         const cache = new CachePolicy(
-            { method: 'GET', headers: { authorization: 'test' } },
+            new Request('http://localhost/', {
+                method: 'GET',
+                headers: { authorization: 'test' },
+            }),
             cacheableResponse,
             { shared: false }
         );
-        assert(!cache.stale());
-        assert(cache.storable());
+        expect(cache.stale()).toBeFalsy();
+        expect(cache.storable()).toBeTruthy();
     });
 
-    it('Revalidated auth is OK', function() {
+    test('Revalidated auth is OK', () => {
         const cache = new CachePolicy(
-            { headers: { authorization: 'test' } },
-            { headers: { 'cache-control': 'max-age=88,must-revalidate' } }
+            new Request('http://localhost/', {
+                headers: { authorization: 'test' },
+            }),
+            new Response(null, {
+                headers: { 'cache-control': 'max-age=88,must-revalidate' },
+            })
         );
-        assert(cache.storable());
+        expect(cache.storable()).toBeTruthy();
     });
 
-    it('Auth prevents caching by default', function() {
+    test('Auth prevents caching by default', () => {
         const cache = new CachePolicy(
-            { method: 'GET', headers: { authorization: 'test' } },
+            new Request('http:localhost/', {
+                method: 'GET',
+                headers: { authorization: 'test' },
+            }),
             cacheableResponse
         );
-        assert(cache.stale());
-        assert(!cache.storable());
+        expect(cache.stale()).toBeTruthy();
+        expect(cache.storable()).toBeFalsy();
     });
 });

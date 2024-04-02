@@ -1,191 +1,260 @@
-'use strict';
+import CachePolicy from '../src';
 
-const assert = require('assert');
-const CachePolicy = require('..');
-
-describe('Vary', function() {
-    it('Basic', function() {
+describe('Vary', () => {
+    test('Basic', () => {
         const policy = new CachePolicy(
-            { headers: { weather: 'nice' } },
-            { headers: { 'cache-control': 'max-age=5', vary: 'weather' } }
-        );
-
-        assert(
-            policy.satisfiesWithoutRevalidation({
-                headers: { weather: 'nice' },
+            new Request('http://localhost/', { headers: { weather: 'nice' } }),
+            new Response(null, {
+                headers: { 'cache-control': 'max-age=5', vary: 'weather' },
             })
         );
-        assert(
-            !policy.satisfiesWithoutRevalidation({
-                headers: { weather: 'bad' },
+
+        expect(
+            policy.satisfiesWithoutRevalidation(
+                new Request('http://localhost/', {
+                    headers: { weather: 'nice' },
+                })
+            )
+        ).toBeTruthy();
+        expect(
+            policy.satisfiesWithoutRevalidation(
+                new Request('http://localhost/', {
+                    headers: { weather: 'bad' },
+                })
+            )
+        ).toBeFalsy();
+    });
+
+    test("* doesn't match", () => {
+        const policy = new CachePolicy(
+            new Request('http://localhost/', { headers: { weather: 'ok' } }),
+            new Response(null, {
+                headers: { 'cache-control': 'max-age=5', vary: '*' },
             })
         );
+
+        expect(
+            policy.satisfiesWithoutRevalidation(
+                new Request('http://localhost/', { headers: { weather: 'ok' } })
+            )
+        ).toBeFalsy();
     });
 
-    it("* doesn't match", function() {
-        const policy = new CachePolicy(
-            { headers: { weather: 'ok' } },
-            { headers: { 'cache-control': 'max-age=5', vary: '*' } }
-        );
-
-        assert(
-            !policy.satisfiesWithoutRevalidation({ headers: { weather: 'ok' } })
-        );
-    });
-
-    it('* is stale', function() {
+    test('* is stale', () => {
         const policy1 = new CachePolicy(
-            { headers: { weather: 'ok' } },
-            { headers: { 'cache-control': 'public,max-age=99', vary: '*' } }
+            new Request('http://localhost/', { headers: { weather: 'ok' } }),
+            new Response(null, {
+                headers: { 'cache-control': 'public,max-age=99', vary: '*' },
+            })
         );
         const policy2 = new CachePolicy(
-            { headers: { weather: 'ok' } },
-            {
+            new Request('http://localhost/', { headers: { weather: 'ok' } }),
+            new Response(null, {
                 headers: {
                     'cache-control': 'public,max-age=99',
                     vary: 'weather',
                 },
-            }
-        );
-
-        assert(policy1.stale());
-        assert(!policy2.stale());
-    });
-
-    it('Values are case-sensitive', function() {
-        const policy = new CachePolicy(
-            { headers: { weather: 'BAD' } },
-            { headers: { 'cache-control': 'max-age=5', vary: 'Weather' } }
-        );
-
-        assert(
-            policy.satisfiesWithoutRevalidation({ headers: { weather: 'BAD' } })
-        );
-        assert(
-            !policy.satisfiesWithoutRevalidation({
-                headers: { weather: 'bad' },
             })
         );
+
+        expect(policy1.stale()).toBeTruthy();
+        expect(policy2.stale()).toBeFalsy();
     });
 
-    it('Irrelevant headers ignored', function() {
+    test('Values are case-sensitive', () => {
         const policy = new CachePolicy(
-            { headers: { weather: 'nice' } },
-            { headers: { 'cache-control': 'max-age=5', vary: 'moon-phase' } }
-        );
-
-        assert(
-            policy.satisfiesWithoutRevalidation({ headers: { weather: 'bad' } })
-        );
-        assert(
-            policy.satisfiesWithoutRevalidation({ headers: { sun: 'shining' } })
-        );
-        assert(
-            !policy.satisfiesWithoutRevalidation({
-                headers: { 'moon-phase': 'full' },
+            new Request('http://localhost/', { headers: { weather: 'BAD' } }),
+            new Response(null, {
+                headers: { 'cache-control': 'max-age=5', vary: 'Weather' },
             })
         );
+
+        expect(
+            policy.satisfiesWithoutRevalidation(
+                new Request('http://localhost/', {
+                    headers: { weather: 'BAD' },
+                })
+            )
+        ).toBeTruthy();
+        expect(
+            policy.satisfiesWithoutRevalidation(
+                new Request('http://localhost/', {
+                    headers: { weather: 'bad' },
+                })
+            )
+        ).toBeFalsy();
     });
 
-    it('Absence is meaningful', function() {
+    test('Irrelevant headers ignored', () => {
         const policy = new CachePolicy(
-            { headers: { weather: 'nice' } },
-            {
+            new Request('http://localhost/', { headers: { weather: 'nice' } }),
+            new Response(null, {
+                headers: { 'cache-control': 'max-age=5', vary: 'moon-phase' },
+            })
+        );
+
+        expect(
+            policy.satisfiesWithoutRevalidation(
+                new Request('http://localhost/', {
+                    headers: { weather: 'bad' },
+                })
+            )
+        ).toBeTruthy();
+        expect(
+            policy.satisfiesWithoutRevalidation(
+                new Request('http://localhost/', {
+                    headers: { sun: 'shining' },
+                })
+            )
+        ).toBeTruthy();
+        expect(
+            policy.satisfiesWithoutRevalidation(
+                new Request('http://localhost/', {
+                    headers: { 'moon-phase': 'full' },
+                })
+            )
+        ).toBeFalsy();
+    });
+
+    test('Absence is meaningful', () => {
+        const policy = new CachePolicy(
+            new Request('http://localhost/', { headers: { weather: 'nice' } }),
+            new Response(null, {
                 headers: {
                     'cache-control': 'max-age=5',
                     vary: 'moon-phase, weather',
                 },
-            }
+            })
         );
 
-        assert(
-            policy.satisfiesWithoutRevalidation({
-                headers: { weather: 'nice' },
-            })
-        );
-        assert(
-            !policy.satisfiesWithoutRevalidation({
-                headers: { weather: 'nice', 'moon-phase': '' },
-            })
-        );
-        assert(!policy.satisfiesWithoutRevalidation({ headers: {} }));
+        expect(
+            policy.satisfiesWithoutRevalidation(
+                new Request('http://localhost/', {
+                    headers: { weather: 'nice' },
+                })
+            )
+        ).toBeTruthy();
+        expect(
+            policy.satisfiesWithoutRevalidation(
+                new Request('http://localhost/', {
+                    headers: { weather: 'nice', 'moon-phase': '' },
+                })
+            )
+        ).toBeFalsy();
+        expect(
+            policy.satisfiesWithoutRevalidation(
+                new Request('http://localhost/', { headers: {} })
+            )
+        ).toBeFalsy();
     });
 
-    it('All values must match', function() {
+    test('All values must match', () => {
         const policy = new CachePolicy(
-            { headers: { sun: 'shining', weather: 'nice' } },
-            { headers: { 'cache-control': 'max-age=5', vary: 'weather, sun' } }
-        );
-
-        assert(
-            policy.satisfiesWithoutRevalidation({
+            new Request('http://localhost/', {
                 headers: { sun: 'shining', weather: 'nice' },
+            }),
+            new Response(null, {
+                headers: { 'cache-control': 'max-age=5', vary: 'weather, sun' },
             })
         );
-        assert(
-            !policy.satisfiesWithoutRevalidation({
-                headers: { sun: 'shining', weather: 'bad' },
-            })
-        );
+
+        expect(
+            policy.satisfiesWithoutRevalidation(
+                new Request('http://localhost/', {
+                    headers: { sun: 'shining', weather: 'nice' },
+                })
+            )
+        ).toBeTruthy();
+        expect(
+            policy.satisfiesWithoutRevalidation(
+                new Request('http://localhost/', {
+                    headers: { sun: 'shining', weather: 'bad' },
+                })
+            )
+        ).toBeFalsy();
     });
 
-    it('Whitespace is OK', function() {
+    test('Whitespace is OK', () => {
         const policy = new CachePolicy(
-            { headers: { sun: 'shining', weather: 'nice' } },
-            {
+            new Request('http://localhost/', {
+                headers: { sun: 'shining', weather: 'nice' },
+            }),
+            new Response(null, {
                 headers: {
                     'cache-control': 'max-age=5',
                     vary: '    weather       ,     sun     ',
                 },
-            }
+            })
         );
 
-        assert(
-            policy.satisfiesWithoutRevalidation({
-                headers: { sun: 'shining', weather: 'nice' },
-            })
-        );
-        assert(
-            !policy.satisfiesWithoutRevalidation({
-                headers: { weather: 'nice' },
-            })
-        );
-        assert(
-            !policy.satisfiesWithoutRevalidation({
-                headers: { sun: 'shining' },
-            })
-        );
+        expect(
+            policy.satisfiesWithoutRevalidation(
+                new Request('http://localhost/', {
+                    headers: { sun: 'shining', weather: 'nice' },
+                })
+            )
+        ).toBeTruthy();
+        expect(
+            policy.satisfiesWithoutRevalidation(
+                new Request('http://localhost/', {
+                    headers: { weather: 'nice' },
+                })
+            )
+        ).toBeFalsy();
+        expect(
+            policy.satisfiesWithoutRevalidation(
+                new Request('http://localhost/', {
+                    headers: { sun: 'shining' },
+                })
+            )
+        ).toBeFalsy();
     });
 
-    it('Order is irrelevant', function() {
+    test('Order is irrelevant', () => {
         const policy1 = new CachePolicy(
-            { headers: { sun: 'shining', weather: 'nice' } },
-            { headers: { 'cache-control': 'max-age=5', vary: 'weather, sun' } }
+            new Request('http://localhost/', {
+                headers: { sun: 'shining', weather: 'nice' },
+            }),
+            new Response(null, {
+                headers: { 'cache-control': 'max-age=5', vary: 'weather, sun' },
+            })
         );
         const policy2 = new CachePolicy(
-            { headers: { sun: 'shining', weather: 'nice' } },
-            { headers: { 'cache-control': 'max-age=5', vary: 'sun, weather' } }
+            new Request('http://localhost/', {
+                headers: { sun: 'shining', weather: 'nice' },
+            }),
+            new Response(null, {
+                headers: { 'cache-control': 'max-age=5', vary: 'sun, weather' },
+            })
         );
 
-        assert(
-            policy1.satisfiesWithoutRevalidation({
-                headers: { weather: 'nice', sun: 'shining' },
-            })
-        );
-        assert(
-            policy1.satisfiesWithoutRevalidation({
-                headers: { sun: 'shining', weather: 'nice' },
-            })
-        );
-        assert(
-            policy2.satisfiesWithoutRevalidation({
-                headers: { weather: 'nice', sun: 'shining' },
-            })
-        );
-        assert(
-            policy2.satisfiesWithoutRevalidation({
-                headers: { sun: 'shining', weather: 'nice' },
-            })
-        );
+        expect(
+            policy1.satisfiesWithoutRevalidation(
+                new Request('http://localhost/', {
+                    headers: { weather: 'nice', sun: 'shining' },
+                })
+            )
+        ).toBeTruthy();
+        expect(
+            policy1.satisfiesWithoutRevalidation(
+                new Request('http://localhost/', {
+                    headers: { sun: 'shining', weather: 'nice' },
+                })
+            )
+        ).toBeTruthy();
+        expect(
+            policy2.satisfiesWithoutRevalidation(
+                new Request('http://localhost/', {
+                    headers: { weather: 'nice', sun: 'shining' },
+                })
+            )
+        ).toBeTruthy();
+        expect(
+            policy2.satisfiesWithoutRevalidation(
+                new Request('http://localhost/', {
+                    headers: { sun: 'shining', weather: 'nice' },
+                })
+            )
+        ).toBeTruthy();
     });
 });

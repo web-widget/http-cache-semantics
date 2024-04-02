@@ -1,476 +1,560 @@
-'use strict';
+import CachePolicy from '../src';
 
-const assert = require('assert');
-const CachePolicy = require('..');
+const req = new Request('http://localhost/', { method: 'GET', headers: {} });
 
-const req = { method: 'GET', headers: {} };
-
-describe('Response headers', function() {
-    it('simple miss', function() {
-        const cache = new CachePolicy(req, { headers: {} });
-        assert(cache.stale());
+describe('Response headers', () => {
+    test('simple miss', () => {
+        const cache = new CachePolicy(req, new Response());
+        expect(cache.stale()).toBeTruthy();
     });
 
-    it('simple hit', function() {
-        const cache = new CachePolicy(req, {
-            headers: { 'cache-control': 'public, max-age=999999' },
-        });
-        assert(!cache.stale());
-        assert.equal(cache.maxAge(), 999999);
+    test('simple hit', () => {
+        const cache = new CachePolicy(
+            req,
+            new Response(null, {
+                headers: { 'cache-control': 'public, max-age=999999' },
+            })
+        );
+        expect(cache.stale()).toBeFalsy();
+        expect(cache.maxAge()).toBe(999999);
     });
 
-    it('weird syntax', function() {
-        const cache = new CachePolicy(req, {
-            headers: { 'cache-control': ',,,,max-age =  456      ,' },
-        });
-        assert(!cache.stale());
-        assert.equal(cache.maxAge(), 456);
+    test('weird syntax', () => {
+        const cache = new CachePolicy(
+            req,
+            new Response(null, {
+                headers: { 'cache-control': ',,,,max-age =  456      ,' },
+            })
+        );
+        expect(cache.stale()).toBeFalsy();
+        expect(cache.maxAge()).toBe(456);
 
         const cache2 = CachePolicy.fromObject(
             JSON.parse(JSON.stringify(cache.toObject()))
         );
-        assert(cache2 instanceof CachePolicy);
-        assert(!cache2.stale());
-        assert.equal(cache2.maxAge(), 456);
+        expect(cache2 instanceof CachePolicy).toBeTruthy();
+        expect(cache2.stale()).toBeFalsy();
+        expect(cache2.maxAge()).toBe(456);
     });
 
-    it('quoted syntax', function() {
-        const cache = new CachePolicy(req, {
-            headers: { 'cache-control': '  max-age = "678"      ' },
-        });
-        assert(!cache.stale());
-        assert.equal(cache.maxAge(), 678);
-    });
-
-    it('IIS', function() {
+    test('quoted syntax', () => {
         const cache = new CachePolicy(
             req,
-            { headers: { 'cache-control': 'private, public, max-age=259200' } },
+            new Response(null, {
+                headers: { 'cache-control': '  max-age = "678"      ' },
+            })
+        );
+        expect(cache.stale()).toBeFalsy();
+        expect(cache.maxAge()).toBe(678);
+    });
+
+    test('IIS', () => {
+        const cache = new CachePolicy(
+            req,
+            new Response(null, {
+                headers: { 'cache-control': 'private, public, max-age=259200' },
+            }),
             { shared: false }
         );
-        assert(!cache.stale());
-        assert.equal(cache.maxAge(), 259200);
+        expect(cache.stale()).toBeFalsy();
+        expect(cache.maxAge()).toBe(259200);
     });
 
-    it('pre-check tolerated', function() {
+    test('pre-check tolerated', () => {
         const cc = 'pre-check=0, post-check=0, no-store, no-cache, max-age=100';
-        const cache = new CachePolicy(req, {
-            headers: { 'cache-control': cc },
-        });
-        assert(cache.stale());
-        assert(!cache.storable());
-        assert.equal(cache.maxAge(), 0);
-        assert.equal(cache.responseHeaders()['cache-control'], cc);
+        const cache = new CachePolicy(
+            req,
+            new Response(null, {
+                headers: { 'cache-control': cc },
+            })
+        );
+        expect(cache.stale()).toBeTruthy();
+        expect(cache.storable()).toBeFalsy();
+        expect(cache.maxAge()).toBe(0);
+        expect(cache.responseHeaders().get('cache-control')).toBe(cc);
     });
 
-    it('pre-check poison', function() {
+    test('pre-check poison', () => {
         const origCC =
             'pre-check=0, post-check=0, no-cache, no-store, max-age=100, custom, foo=bar';
-        const res = {
+        const res = new Response(null, {
             headers: { 'cache-control': origCC, pragma: 'no-cache' },
-        };
+        });
         const cache = new CachePolicy(req, res, { ignoreCargoCult: true });
-        assert(!cache.stale());
-        assert(cache.storable());
-        assert.equal(cache.maxAge(), 100);
+        expect(cache.stale()).toBeFalsy();
+        expect(cache.storable()).toBeTruthy();
+        expect(cache.maxAge()).toBe(100);
 
-        const cc = cache.responseHeaders()['cache-control'];
-        assert(!/pre-check/.test(cc), cc);
-        assert(!/post-check/.test(cc), cc);
-        assert(!/no-store/.test(cc), cc);
+        const cc = cache.responseHeaders().get('cache-control') ?? '';
+        expect(/pre-check/.test(cc)).toBeFalsy();
+        expect(/post-check/.test(cc)).toBeFalsy();
+        expect(/no-store/.test(cc)).toBeFalsy();
 
-        assert(/max-age=100/.test(cc));
-        assert(/custom(,|$)/.test(cc));
-        assert(/foo=bar/.test(cc));
+        expect(/max-age=100/.test(cc)).toBeTruthy();
+        expect(/custom(,|$)/.test(cc)).toBeTruthy();
+        expect(/foo=bar/.test(cc)).toBeTruthy();
 
-        assert.equal(res.headers['cache-control'], origCC);
-        assert(res.headers['pragma']);
-        assert(!cache.responseHeaders()['pragma']);
+        expect(res.headers.get('cache-control')).toBe(origCC);
+        expect(res.headers.get('pragma')).toBeDefined();
+        expect(cache.responseHeaders().get('pragma')).toBe(null);
     });
 
-    it('pre-check poison undefined header', function() {
+    test('pre-check poison undefined header', () => {
         const origCC = 'pre-check=0, post-check=0, no-cache, no-store';
-        const res = {
+        const res = new Response(null, {
             headers: { 'cache-control': origCC, expires: 'yesterday!' },
-        };
+        });
         const cache = new CachePolicy(req, res, { ignoreCargoCult: true });
-        assert(cache.stale());
-        assert(cache.storable());
-        assert.equal(cache.maxAge(), 0);
+        expect(cache.stale()).toBeTruthy();
+        expect(cache.storable()).toBeTruthy();
+        expect(cache.maxAge()).toBe(0);
 
-        const cc = cache.responseHeaders()['cache-control'];
-        assert(!cc);
+        const cc = cache.responseHeaders().get('cache-control');
+        expect(cc).toBe(null);
 
-        assert(res.headers['expires']);
-        assert(!cache.responseHeaders()['expires']);
+        expect(res.headers.has('expires')).toBeTruthy();
+        expect(cache.responseHeaders().get('expires')).toBe(null);
     });
 
-    it('cache with expires', function() {
-        const now = Date.now();
-        const cache = new CachePolicy(req, {
-            headers: {
-                date: new Date(now).toGMTString(),
-                expires: new Date(now + 2000).toGMTString(),
-            },
-        });
-        assert(!cache.stale());
-        assert.equal(2, cache.maxAge());
-    });
-
-    it('cache with expires relative to date', function() {
-        const now = Date.now();
-        const cache = new CachePolicy(req, {
-            headers: {
-                date: new Date(now - 3000).toGMTString(),
-                expires: new Date(now).toGMTString(),
-            },
-        });
-        assert.equal(3, cache.maxAge());
-    });
-
-    it('cache with expires always relative to date', function() {
+    test('cache with expires', () => {
         const now = Date.now();
         const cache = new CachePolicy(
             req,
-            {
+            new Response(null, {
                 headers: {
-                    date: new Date(now - 3000).toGMTString(),
-                    expires: new Date(now).toGMTString(),
+                    date: new Date(now).toUTCString(),
+                    expires: new Date(now + 2000).toUTCString(),
                 },
-            },
+            })
+        );
+        expect(cache.stale()).toBeFalsy();
+        expect(cache.maxAge()).toBe(2);
+    });
+
+    test('cache with expires relative to date', () => {
+        const now = Date.now();
+        const cache = new CachePolicy(
+            req,
+            new Response(null, {
+                headers: {
+                    date: new Date(now - 3000).toUTCString(),
+                    expires: new Date(now).toUTCString(),
+                },
+            })
+        );
+        expect(cache.maxAge()).toBe(3);
+    });
+
+    test('cache with expires always relative to date', () => {
+        const now = Date.now();
+        const cache = new CachePolicy(
+            req,
+            new Response(null, {
+                headers: {
+                    date: new Date(now - 3000).toUTCString(),
+                    expires: new Date(now).toUTCString(),
+                },
+            }),
+            // @ts-ignore
             { trustServerDate: false }
         );
-        assert.equal(3, cache.maxAge());
+        expect(cache.maxAge()).toBe(3);
     });
 
-    it('cache expires no date', function() {
-        const cache = new CachePolicy(req, {
-            headers: {
-                'cache-control': 'public',
-                expires: new Date(Date.now() + 3600 * 1000).toGMTString(),
-            },
-        });
-        assert(!cache.stale());
-        assert(cache.maxAge() > 3595);
-        assert(cache.maxAge() < 3605);
+    test('cache expires no date', () => {
+        const cache = new CachePolicy(
+            req,
+            new Response(null, {
+                headers: {
+                    'cache-control': 'public',
+                    expires: new Date(Date.now() + 3600 * 1000).toUTCString(),
+                },
+            })
+        );
+        expect(cache.stale()).toBeFalsy();
+        expect(cache.maxAge()).toBeGreaterThan(3595);
+        expect(cache.maxAge()).toBeLessThan(3605);
     });
 
-    it('Ages', function() {
+    test('Ages', () => {
         let now = 1000;
         class TimeTravellingPolicy extends CachePolicy {
             now() {
                 return now;
             }
         }
-        const cache = new TimeTravellingPolicy(req, {
-            headers: {
-                'cache-control': 'max-age=100',
-                age: '50',
-            },
-        });
-        assert(cache.storable());
+        const cache = new TimeTravellingPolicy(
+            req,
+            new Response(null, {
+                headers: {
+                    'cache-control': 'max-age=100',
+                    age: '50',
+                },
+            })
+        );
+        expect(cache.storable()).toBeTruthy();
 
-        assert.equal(50 * 1000, cache.timeToLive());
-        assert(!cache.stale());
+        expect(cache.timeToLive()).toBe(50 * 1000);
+        expect(cache.stale()).toBeFalsy();
         now += 48 * 1000;
-        assert.equal(2 * 1000, cache.timeToLive());
-        assert(!cache.stale());
+        expect(cache.timeToLive()).toBe(2 * 1000);
+        expect(cache.stale()).toBeFalsy();
         now += 5 * 1000;
-        assert(cache.stale());
-        assert.equal(0, cache.timeToLive());
+        expect(cache.stale()).toBeTruthy();
+        expect(cache.timeToLive()).toBe(0);
     });
 
-    it('Age can make stale', function() {
-        const cache = new CachePolicy(req, {
-            headers: {
-                'cache-control': 'max-age=100',
-                age: '101',
-            },
-        });
-        assert(cache.stale());
-        assert(cache.storable());
-    });
-
-    it('Age not always stale', function() {
-        const cache = new CachePolicy(req, {
-            headers: {
-                'cache-control': 'max-age=20',
-                age: '15',
-            },
-        });
-        assert(!cache.stale());
-        assert(cache.storable());
-    });
-
-    it('Bogus age ignored', function() {
-        const cache = new CachePolicy(req, {
-            headers: {
-                'cache-control': 'max-age=20',
-                age: 'golden',
-            },
-        });
-        assert(!cache.stale());
-        assert(cache.storable());
-    });
-
-    it('cache old files', function() {
-        const cache = new CachePolicy(req, {
-            headers: {
-                date: new Date().toGMTString(),
-                'last-modified': 'Mon, 07 Mar 2016 11:52:56 GMT',
-            },
-        });
-        assert(!cache.stale());
-        assert(cache.maxAge() > 100);
-    });
-
-    it('immutable simple hit', function() {
-        const cache = new CachePolicy(req, {
-            headers: { 'cache-control': 'immutable, max-age=999999' },
-        });
-        assert(!cache.stale());
-        assert.equal(cache.maxAge(), 999999);
-    });
-
-    it('immutable can expire', function() {
-        const cache = new CachePolicy(req, {
-            headers: { 'cache-control': 'immutable, max-age=0' },
-        });
-        assert(cache.stale());
-        assert.equal(cache.maxAge(), 0);
-    });
-
-    it('cache immutable files', function() {
-        const cache = new CachePolicy(req, {
-            headers: {
-                date: new Date().toGMTString(),
-                'cache-control': 'immutable',
-                'last-modified': new Date().toGMTString(),
-            },
-        });
-        assert(!cache.stale());
-        assert(cache.maxAge() > 100);
-    });
-
-    it('immutable can be off', function() {
+    test('Age can make stale', () => {
         const cache = new CachePolicy(
             req,
-            {
+            new Response(null, {
                 headers: {
-                    date: new Date().toGMTString(),
-                    'cache-control': 'immutable',
-                    'last-modified': new Date().toGMTString(),
+                    'cache-control': 'max-age=100',
+                    age: '101',
                 },
-            },
+            })
+        );
+        expect(cache.stale()).toBeTruthy();
+        expect(cache.storable()).toBeTruthy();
+    });
+
+    test('Age not always stale', () => {
+        const cache = new CachePolicy(
+            req,
+            new Response(null, {
+                headers: {
+                    'cache-control': 'max-age=20',
+                    age: '15',
+                },
+            })
+        );
+        expect(cache.stale()).toBeFalsy();
+        expect(cache.storable()).toBeTruthy();
+    });
+
+    test('Bogus age ignored', () => {
+        const cache = new CachePolicy(
+            req,
+            new Response(null, {
+                headers: {
+                    'cache-control': 'max-age=20',
+                    age: 'golden',
+                },
+            })
+        );
+        expect(cache.stale()).toBeFalsy();
+        expect(cache.storable()).toBeTruthy();
+    });
+
+    test('cache old files', () => {
+        const cache = new CachePolicy(
+            req,
+            new Response(null, {
+                headers: {
+                    date: new Date().toUTCString(),
+                    'last-modified': 'Mon, 07 Mar 2016 11:52:56 GMT',
+                },
+            })
+        );
+        expect(cache.stale()).toBeFalsy();
+        expect(cache.maxAge()).toBeGreaterThan(100);
+    });
+
+    test('immutable simple hit', () => {
+        const cache = new CachePolicy(
+            req,
+            new Response(null, {
+                headers: { 'cache-control': 'immutable, max-age=999999' },
+            })
+        );
+        expect(cache.stale()).toBeFalsy();
+        expect(cache.maxAge()).toBe(999999);
+    });
+
+    test('immutable can expire', () => {
+        const cache = new CachePolicy(
+            req,
+            new Response(null, {
+                headers: { 'cache-control': 'immutable, max-age=0' },
+            })
+        );
+        expect(cache.stale()).toBeTruthy();
+        expect(cache.maxAge()).toBe(0);
+    });
+
+    test('cache immutable files', () => {
+        const cache = new CachePolicy(
+            req,
+            new Response(null, {
+                headers: {
+                    date: new Date().toUTCString(),
+                    'cache-control': 'immutable',
+                    'last-modified': new Date().toUTCString(),
+                },
+            })
+        );
+        expect(cache.stale()).toBeFalsy();
+        expect(cache.maxAge()).toBeGreaterThan(100);
+    });
+
+    test('immutable can be off', () => {
+        const cache = new CachePolicy(
+            req,
+            new Response(null, {
+                headers: {
+                    date: new Date().toUTCString(),
+                    'cache-control': 'immutable',
+                    'last-modified': new Date().toUTCString(),
+                },
+            }),
             { immutableMinTimeToLive: 0 }
         );
-        assert(cache.stale());
-        assert.equal(cache.maxAge(), 0);
+        expect(cache.stale()).toBeTruthy();
+        expect(cache.maxAge()).toBe(0);
     });
 
-    it('pragma: no-cache', function() {
-        const cache = new CachePolicy(req, {
-            headers: {
-                pragma: 'no-cache',
-                'last-modified': 'Mon, 07 Mar 2016 11:52:56 GMT',
-            },
-        });
-        assert(cache.stale());
+    test('pragma: no-cache', () => {
+        const cache = new CachePolicy(
+            req,
+            new Response(null, {
+                headers: {
+                    pragma: 'no-cache',
+                    'last-modified': 'Mon, 07 Mar 2016 11:52:56 GMT',
+                },
+            })
+        );
+        expect(cache.stale()).toBeTruthy();
     });
 
-    it('blank cache-control and pragma: no-cache', function() {
-        const cache = new CachePolicy(req, {
-            headers: {
-                'cache-control': '',
-                pragma: 'no-cache',
-                'last-modified': new Date(Date.now() - 10000).toGMTString(),
-            },
-        });
-        assert(cache.maxAge() > 0);
-        assert(!cache.stale());
+    test('blank cache-control and pragma: no-cache', () => {
+        const cache = new CachePolicy(
+            req,
+            new Response(null, {
+                headers: {
+                    'cache-control': '',
+                    pragma: 'no-cache',
+                    'last-modified': new Date(Date.now() - 10000).toUTCString(),
+                },
+            })
+        );
+        expect(cache.maxAge()).toBeGreaterThan(0);
+        expect(cache.stale()).toBeFalsy();
     });
 
-    it('no-store', function() {
-        const cache = new CachePolicy(req, {
-            headers: {
-                'cache-control': 'no-store, public, max-age=1',
-            },
-        });
-        assert(cache.stale());
-        assert.equal(0, cache.maxAge());
+    test('no-store', () => {
+        const cache = new CachePolicy(
+            req,
+            new Response(null, {
+                headers: {
+                    'cache-control': 'no-store, public, max-age=1',
+                },
+            })
+        );
+        expect(cache.stale()).toBeTruthy();
+        expect(cache.maxAge()).toBe(0);
     });
 
-    it('observe private cache', function() {
+    test('observe private cache', () => {
         const privateHeader = {
             'cache-control': 'private, max-age=1234',
         };
-        const proxyCache = new CachePolicy(req, { headers: privateHeader });
-        assert(proxyCache.stale());
-        assert.equal(0, proxyCache.maxAge());
+        const proxyCache = new CachePolicy(
+            req,
+            new Response(null, new Response(null, { headers: privateHeader }))
+        );
+        expect(proxyCache.stale()).toBeTruthy();
+        expect(proxyCache.maxAge()).toBe(0);
 
         const uaCache = new CachePolicy(
             req,
-            { headers: privateHeader },
+            new Response(null, { headers: privateHeader }),
             { shared: false }
         );
-        assert(!uaCache.stale());
-        assert.equal(1234, uaCache.maxAge());
+        expect(uaCache.stale()).toBeFalsy();
+        expect(uaCache.maxAge()).toBe(1234);
     });
 
-    it("don't share cookies", function() {
+    test("don't share cookies", () => {
         const cookieHeader = {
             'set-cookie': 'foo=bar',
             'cache-control': 'max-age=99',
         };
         const proxyCache = new CachePolicy(
             req,
-            { headers: cookieHeader },
+            new Response(null, { headers: cookieHeader }),
             { shared: true }
         );
-        assert(proxyCache.stale());
-        assert.equal(0, proxyCache.maxAge());
+        expect(proxyCache.stale()).toBeTruthy();
+        expect(proxyCache.maxAge()).toBe(0);
 
         const uaCache = new CachePolicy(
             req,
-            { headers: cookieHeader },
+            new Response(null, { headers: cookieHeader }),
             { shared: false }
         );
-        assert(!uaCache.stale());
-        assert.equal(99, uaCache.maxAge());
+        expect(uaCache.stale()).toBeFalsy();
+        expect(uaCache.maxAge()).toBe(99);
     });
 
-    it('do share cookies if immutable', function() {
+    test('do share cookies if immutable', () => {
         const cookieHeader = {
             'set-cookie': 'foo=bar',
             'cache-control': 'immutable, max-age=99',
         };
         const proxyCache = new CachePolicy(
             req,
-            { headers: cookieHeader },
+            new Response(null, { headers: cookieHeader }),
             { shared: true }
         );
-        assert(!proxyCache.stale());
-        assert.equal(99, proxyCache.maxAge());
+        expect(proxyCache.stale()).toBeFalsy();
+        expect(proxyCache.maxAge()).toBe(99);
     });
 
-    it('cache explicitly public cookie', function() {
+    test('cache explicitly public cookie', () => {
         const cookieHeader = {
             'set-cookie': 'foo=bar',
             'cache-control': 'max-age=5, public',
         };
         const proxyCache = new CachePolicy(
             req,
-            { headers: cookieHeader },
+            new Response(null, { headers: cookieHeader }),
             { shared: true }
         );
-        assert(!proxyCache.stale());
-        assert.equal(5, proxyCache.maxAge());
+        expect(proxyCache.stale()).toBeFalsy();
+        expect(proxyCache.maxAge()).toBe(5);
     });
 
-    it('miss max-age=0', function() {
-        const cache = new CachePolicy(req, {
-            headers: {
-                'cache-control': 'public, max-age=0',
-            },
-        });
-        assert(cache.stale());
-        assert.equal(0, cache.maxAge());
+    test('miss max-age=0', () => {
+        const cache = new CachePolicy(
+            req,
+            new Response(null, {
+                headers: {
+                    'cache-control': 'public, max-age=0',
+                },
+            })
+        );
+        expect(cache.stale()).toBeTruthy();
+        expect(cache.maxAge()).toBe(0);
     });
 
-    it('uncacheable 503', function() {
-        const cache = new CachePolicy(req, {
-            status: 503,
-            headers: {
-                'cache-control': 'public, max-age=1000',
-            },
-        });
-        assert(cache.stale());
-        assert.equal(0, cache.maxAge());
+    test('uncacheable 503', () => {
+        const cache = new CachePolicy(
+            req,
+            new Response(null, {
+                status: 503,
+                headers: {
+                    'cache-control': 'public, max-age=1000',
+                },
+            })
+        );
+        expect(cache.stale()).toBeTruthy();
+        expect(cache.maxAge()).toBe(0);
     });
 
-    it('cacheable 301', function() {
-        const cache = new CachePolicy(req, {
-            status: 301,
-            headers: {
-                'last-modified': 'Mon, 07 Mar 2016 11:52:56 GMT',
-            },
-        });
-        assert(!cache.stale());
+    test('cacheable 301', () => {
+        const cache = new CachePolicy(
+            req,
+            new Response(null, {
+                status: 301,
+                headers: {
+                    'last-modified': 'Mon, 07 Mar 2016 11:52:56 GMT',
+                },
+            })
+        );
+        expect(cache.stale()).toBeFalsy();
     });
 
-    it('uncacheable 303', function() {
-        const cache = new CachePolicy(req, {
-            status: 303,
-            headers: {
-                'last-modified': 'Mon, 07 Mar 2016 11:52:56 GMT',
-            },
-        });
-        assert(cache.stale());
-        assert.equal(0, cache.maxAge());
+    test('uncacheable 303', () => {
+        const cache = new CachePolicy(
+            req,
+            new Response(null, {
+                status: 303,
+                headers: {
+                    'last-modified': 'Mon, 07 Mar 2016 11:52:56 GMT',
+                },
+            })
+        );
+        expect(cache.stale()).toBeTruthy();
+        expect(cache.maxAge()).toBe(0);
     });
 
-    it('cacheable 303', function() {
-        const cache = new CachePolicy(req, {
-            status: 303,
-            headers: {
-                'cache-control': 'max-age=1000',
-            },
-        });
-        assert(!cache.stale());
+    test('cacheable 303', () => {
+        const cache = new CachePolicy(
+            req,
+            new Response(null, {
+                status: 303,
+                headers: {
+                    'cache-control': 'max-age=1000',
+                },
+            })
+        );
+        expect(cache.stale()).toBeFalsy();
     });
 
-    it('uncacheable 412', function() {
-        const cache = new CachePolicy(req, {
-            status: 412,
-            headers: {
-                'cache-control': 'public, max-age=1000',
-            },
-        });
-        assert(cache.stale());
-        assert.equal(0, cache.maxAge());
+    test('uncacheable 412', () => {
+        const cache = new CachePolicy(
+            req,
+            new Response(null, {
+                status: 412,
+                headers: {
+                    'cache-control': 'public, max-age=1000',
+                },
+            })
+        );
+        expect(cache.stale()).toBeTruthy();
+        expect(cache.maxAge()).toBe(0);
     });
 
-    it('expired expires cached with max-age', function() {
-        const cache = new CachePolicy(req, {
-            headers: {
-                'cache-control': 'public, max-age=9999',
-                expires: 'Sat, 07 May 2016 15:35:18 GMT',
-            },
-        });
-        assert(!cache.stale());
-        assert.equal(9999, cache.maxAge());
+    test('expired expires cached with max-age', () => {
+        const cache = new CachePolicy(
+            req,
+            new Response(null, {
+                headers: {
+                    'cache-control': 'public, max-age=9999',
+                    expires: 'Sat, 07 May 2016 15:35:18 GMT',
+                },
+            })
+        );
+        expect(cache.stale()).toBeFalsy();
+        expect(cache.maxAge()).toBe(9999);
     });
 
-    it('expired expires cached with s-maxage', function() {
+    test('expired expires cached with s-maxage', () => {
         const sMaxAgeHeaders = {
             'cache-control': 'public, s-maxage=9999',
             expires: 'Sat, 07 May 2016 15:35:18 GMT',
         };
-        const proxyCache = new CachePolicy(req, { headers: sMaxAgeHeaders });
-        assert(!proxyCache.stale());
-        assert.equal(9999, proxyCache.maxAge());
+        const proxyCache = new CachePolicy(
+            req,
+            new Response(null, new Response(null, { headers: sMaxAgeHeaders }))
+        );
+        expect(proxyCache.stale()).toBeFalsy();
+        expect(proxyCache.maxAge()).toBe(9999);
 
         const uaCache = new CachePolicy(
             req,
-            { headers: sMaxAgeHeaders },
+            new Response(null, { headers: sMaxAgeHeaders }),
             { shared: false }
         );
-        assert(uaCache.stale());
-        assert.equal(0, uaCache.maxAge());
+        expect(uaCache.stale()).toBeTruthy();
+        expect(uaCache.maxAge()).toBe(0);
     });
 
-    it('max-age wins over future expires', function() {
-        const cache = new CachePolicy(req, {
-            headers: {
-                'cache-control': 'public, max-age=333',
-                expires: new Date(Date.now() + 3600 * 1000).toGMTString(),
-            },
-        });
-        assert(!cache.stale());
-        assert.equal(333, cache.maxAge());
+    test('max-age wins over future expires', () => {
+        const cache = new CachePolicy(
+            req,
+            new Response(null, {
+                headers: {
+                    'cache-control': 'public, max-age=333',
+                    expires: new Date(Date.now() + 3600 * 1000).toUTCString(),
+                },
+            })
+        );
+        expect(cache.stale()).toBeFalsy();
+        expect(cache.maxAge()).toBe(333);
     });
 
-    it('remove hop headers', function() {
+    test('remove hop headers', () => {
         let now = 10000;
         class TimeTravellingPolicy extends CachePolicy {
             now() {
@@ -478,7 +562,7 @@ describe('Response headers', function() {
             }
         }
 
-        const res = {
+        const res = new Response(null, {
             headers: {
                 te: 'deflate',
                 date: 'now',
@@ -488,25 +572,25 @@ describe('Response headers', function() {
                 age: '10',
                 'cache-control': 'public, max-age=333',
             },
-        };
+        });
         const cache = new TimeTravellingPolicy(req, res);
 
         now += 1005;
         const h = cache.responseHeaders();
-        assert(!h.connection);
-        assert(!h.te);
-        assert(!h.oompa);
-        assert.equal(h['cache-control'], 'public, max-age=333');
-        assert.notEqual(h.date, 'now', 'updated age requires updated date');
-        assert.equal(h.custom, 'header');
-        assert.equal(h.age, '11');
-        assert.equal(res.headers.age, '10');
+        expect(h.get('connection')).toBe(null);
+        expect(h.get('te')).toBe(null);
+        expect(h.get('oompa')).toBe(null);
+        expect(h.get('cache-control')).toBe('public, max-age=333');
+        expect(h.get('date')).not.toBe('now');
+        expect(h.get('custom')).toBe('header');
+        expect(h.get('age')).toBe('11');
+        expect(res.headers.get('age')).toBe('10');
 
         const cache2 = TimeTravellingPolicy.fromObject(
             JSON.parse(JSON.stringify(cache.toObject()))
         );
-        assert(cache2 instanceof TimeTravellingPolicy);
+        expect(cache2 instanceof TimeTravellingPolicy).toBeTruthy();
         const h2 = cache2.responseHeaders();
-        assert.deepEqual(h, h2);
+        expect(h).toEqual(h2);
     });
 });
