@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('assert');
-const CachePolicy = require('..');
+const CachePolicy = require('../src');
 
 const publicCacheableResponse = {
     headers: { 'cache-control': 'public, max-age=222' },

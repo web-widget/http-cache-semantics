@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('assert');
-const CachePolicy = require('..');
+const CachePolicy = require('../src');
 
 describe('Vary', function() {
     it('Basic', function() {

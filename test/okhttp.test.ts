@@ -16,7 +16,7 @@
  */
 
 const assert = require('assert');
-const CachePolicy = require('..');
+const CachePolicy = require('../src');
 
 describe('okhttp tests', function() {
     it('response caching by response code', function() {
