@@ -1,43 +1,14 @@
 // rfc7231 6.1
 const statusCodeCacheableByDefault = new Set([
-    200,
-    203,
-    204,
-    206,
-    300,
-    301,
-    308,
-    404,
-    405,
-    410,
-    414,
-    501,
+    200, 203, 204, 206, 300, 301, 308, 404, 405, 410, 414, 501,
 ]);
 
 // This implementation does not understand partial responses (206)
 const understoodStatuses = new Set([
-    200,
-    203,
-    204,
-    300,
-    301,
-    302,
-    303,
-    307,
-    308,
-    404,
-    405,
-    410,
-    414,
-    501,
+    200, 203, 204, 300, 301, 302, 303, 307, 308, 404, 405, 410, 414, 501,
 ]);
 
-const errorStatusCodes = new Set([
-    500,
-    502,
-    503, 
-    504,
-]);
+const errorStatusCodes = new Set([500, 502, 503, 504]);
 
 const hopByHopHeaders: Record<string, boolean> = {
     date: true, // included, because we add Age update Date
@@ -67,8 +38,8 @@ function toNumberOrZero(s: string) {
 // RFC 5861
 function isErrorResponse(response?: Response) {
     // consider undefined response as faulty
-    if(!response) {
-        return true
+    if (!response) {
+        return true;
     }
     return errorStatusCodes.has(response.status);
 }
@@ -109,20 +80,20 @@ function headersToObject(headers: Headers): Record<string, string> {
 }
 
 type CacheValue = {
-    v: number,
-    t: number,
-    sh: boolean,
-    ch: number,
-    imm: number,
-    st: number,
-    resh: Record<string, string>,
-    rescc: Record<string, string | boolean>,
-    m: string,
-    u: string,
-    h: string | null,
-    a: boolean,
-    reqh: Record<string, string> | null,
-    reqcc: Record<string, string | boolean>,
+    v: number;
+    t: number;
+    sh: boolean;
+    ch: number;
+    imm: number;
+    st: number;
+    resh: Record<string, string>;
+    rescc: Record<string, string | boolean>;
+    m: string;
+    u: string;
+    h: string | null;
+    a: boolean;
+    reqh: Record<string, string> | null;
+    reqcc: Record<string, string | boolean>;
 };
 
 export default class CachePolicy {
@@ -149,11 +120,11 @@ export default class CachePolicy {
             ignoreCargoCult,
             _fromObject,
         }: {
-            shared?: boolean,
-            cacheHeuristic?: number,
-            immutableMinTimeToLive?: number,
-            ignoreCargoCult?: boolean,
-            _fromObject?: CacheValue
+            shared?: boolean;
+            cacheHeuristic?: number;
+            immutableMinTimeToLive?: number;
+            ignoreCargoCult?: boolean;
+            _fromObject?: CacheValue;
         } = {}
     ) {
         if (_fromObject) {
@@ -177,13 +148,17 @@ export default class CachePolicy {
 
         this.#status = 'status' in res ? res.status : 200;
         this.#resHeaders = res.headers;
-        this.#resCacheControl = parseCacheControl(res.headers.get('cache-control'));
+        this.#resCacheControl = parseCacheControl(
+            res.headers.get('cache-control')
+        );
         this.#method = 'method' in req ? req.method : 'GET';
         this.#url = req.url;
         this.#host = req.headers.get('host');
         this.#noAuthorization = !req.headers.has('authorization');
         this.#reqHeaders = res.headers.has('vary') ? req.headers : null; // Don't keep all request headers if they won't be used
-        this.#reqCacheControl = parseCacheControl(req.headers.get('cache-control'));
+        this.#reqCacheControl = parseCacheControl(
+            req.headers.get('cache-control')
+        );
 
         // Assume that if someone uses legacy, non-standard uncecessary options they don't understand caching,
         // so there's no point stricly adhering to the blindly copy&pasted directives.
@@ -277,12 +252,20 @@ export default class CachePolicy {
         // When presented with a request, a cache MUST NOT reuse a stored response, unless:
         // the presented request does not contain the no-cache pragma (Section 5.4), nor the no-cache cache directive,
         // unless the stored response is successfully validated (Section 4.3), and
-        const reqCacheControl = parseCacheControl(req.headers.get('cache-control'));
-        if (reqCacheControl['no-cache'] || /no-cache/.test(req.headers.get('pragma') ?? '')) {
+        const reqCacheControl = parseCacheControl(
+            req.headers.get('cache-control')
+        );
+        if (
+            reqCacheControl['no-cache'] ||
+            /no-cache/.test(req.headers.get('pragma') ?? '')
+        ) {
             return false;
         }
 
-        if (reqCacheControl['max-age'] && this.age() > Number(reqCacheControl['max-age'])) {
+        if (
+            reqCacheControl['max-age'] &&
+            this.age() > Number(reqCacheControl['max-age'])
+        ) {
             return false;
         }
 
@@ -300,7 +283,8 @@ export default class CachePolicy {
                 reqCacheControl['max-stale'] &&
                 !this.#resCacheControl['must-revalidate'] &&
                 (true === reqCacheControl['max-stale'] ||
-                    Number(reqCacheControl['max-stale']) > this.age() - this.maxAge());
+                    Number(reqCacheControl['max-stale']) >
+                        this.age() - this.maxAge());
             if (!allowsStale) {
                 return false;
             }
@@ -342,12 +326,14 @@ export default class CachePolicy {
             return false;
         }
 
-        const fields = (this.#resHeaders.get('vary')!)
+        const fields = this.#resHeaders
+            .get('vary')!
             .trim()
             .toLowerCase()
             .split(/\s*,\s*/);
         for (const name of fields) {
-            if (req.headers.get(name) !== this.#reqHeaders?.get(name)) return false;
+            if (req.headers.get(name) !== this.#reqHeaders?.get(name))
+                return false;
         }
         return true;
     }
@@ -361,15 +347,21 @@ export default class CachePolicy {
         });
         // 9.1.  Connection
         if (inHeaders.has('connection')) {
-            const tokens = inHeaders.get('connection')!.trim().split(/\s*,\s*/);
+            const tokens = inHeaders
+                .get('connection')!
+                .trim()
+                .split(/\s*,\s*/);
             for (const name of tokens) {
                 headers.delete(name);
             }
         }
         if (headers.has('warning')) {
-            const warnings = headers.get('warning')!.split(/,/).filter(warning => {
-                return !/^\s*1[0-9][0-9]/.test(warning);
-            });
+            const warnings = headers
+                .get('warning')!
+                .split(/,/)
+                .filter((warning) => {
+                    return !/^\s*1[0-9][0-9]/.test(warning);
+                });
             if (!warnings.length) {
                 headers.delete('warning');
             } else {
@@ -390,10 +382,13 @@ export default class CachePolicy {
             !this.#hasExplicitExpiration() &&
             this.maxAge() > 3600 * 24
         ) {
-            headers.set('warning', (headers.has('warning') ? `${headers.get('warning')}, ` : '') +
-            '113 - "rfc7234 5.5.4"');
+            headers.set(
+                'warning',
+                (headers.has('warning') ? `${headers.get('warning')}, ` : '') +
+                    '113 - "rfc7234 5.5.4"'
+            );
         }
-        headers.set('age', `${Math.round(age)}`)
+        headers.set('age', `${Math.round(age)}`);
         headers.set('date', new Date(this.now()).toUTCString());
         return headers;
     }
@@ -439,9 +434,9 @@ export default class CachePolicy {
         // so this implementation requires explicit opt-in via public header
         if (
             this.#isShared &&
-            (this.#resHeaders.has('set-cookie') &&
-                !this.#resCacheControl.public &&
-                !this.#resCacheControl.immutable)
+            this.#resHeaders.has('set-cookie') &&
+            !this.#resCacheControl.public &&
+            !this.#resCacheControl.immutable
         ) {
             return 0;
         }
@@ -456,7 +451,9 @@ export default class CachePolicy {
             }
             // if a response includes the s-maxage directive, a shared cache recipient MUST ignore the Expires field.
             if (this.#resCacheControl['s-maxage']) {
-                return toNumberOrZero(this.#resCacheControl['s-maxage'] as string);
+                return toNumberOrZero(
+                    this.#resCacheControl['s-maxage'] as string
+                );
             }
         }
 
@@ -465,7 +462,9 @@ export default class CachePolicy {
             return toNumberOrZero(this.#resCacheControl['max-age'] as string);
         }
 
-        const defaultMinTtl = this.#resCacheControl.immutable ? this.#immutableMinTtl : 0;
+        const defaultMinTtl = this.#resCacheControl.immutable
+            ? this.#immutableMinTtl
+            : 0;
 
         const serverDate = this.date();
         if (this.#resHeaders.has('expires')) {
@@ -478,7 +477,9 @@ export default class CachePolicy {
         }
 
         if (this.#resHeaders.has('last-modified')) {
-            const lastModified = Date.parse(this.#resHeaders.get('last-modified')!);
+            const lastModified = Date.parse(
+                this.#resHeaders.get('last-modified')!
+            );
             if (isFinite(lastModified) && serverDate > lastModified) {
                 return Math.max(
                     defaultMinTtl,
@@ -497,9 +498,17 @@ export default class CachePolicy {
      */
     timeToLive() {
         const age = this.maxAge() - this.age();
-        const staleIfErrorAge = age + toNumberOrZero(this.#resCacheControl['stale-if-error'] as string);
-        const staleWhileRevalidateAge = age + toNumberOrZero(this.#resCacheControl['stale-while-revalidate'] as string);
-        return Math.round(Math.max(0, age, staleIfErrorAge, staleWhileRevalidateAge) * 1000);
+        const staleIfErrorAge =
+            age +
+            toNumberOrZero(this.#resCacheControl['stale-if-error'] as string);
+        const staleWhileRevalidateAge =
+            age +
+            toNumberOrZero(
+                this.#resCacheControl['stale-while-revalidate'] as string
+            );
+        return Math.round(
+            Math.max(0, age, staleIfErrorAge, staleWhileRevalidateAge) * 1000
+        );
     }
 
     stale() {
@@ -507,15 +516,31 @@ export default class CachePolicy {
     }
 
     #useStaleIfError() {
-        return this.maxAge() + toNumberOrZero(this.#resCacheControl['stale-if-error'] as string) > this.age();
+        return (
+            this.maxAge() +
+                toNumberOrZero(
+                    this.#resCacheControl['stale-if-error'] as string
+                ) >
+            this.age()
+        );
     }
 
     useStaleWhileRevalidate() {
-        return this.maxAge() + toNumberOrZero(this.#resCacheControl['stale-while-revalidate'] as string) > this.age();
+        return (
+            this.maxAge() +
+                toNumberOrZero(
+                    this.#resCacheControl['stale-while-revalidate'] as string
+                ) >
+            this.age()
+        );
     }
 
     static fromObject(obj: CacheValue) {
-        return new this(undefined as unknown as Request, undefined as unknown as Response, { _fromObject: obj });
+        return new this(
+            undefined as unknown as Request,
+            undefined as unknown as Response,
+            { _fromObject: obj }
+        );
     }
 
     #fromObject(obj: CacheValue) {
@@ -581,9 +606,14 @@ export default class CachePolicy {
 
         /* MUST send that entity-tag in any cache validation request (using If-Match or If-None-Match) if an entity-tag has been provided by the origin server. */
         if (this.#resHeaders.has('etag')) {
-            headers.set('if-none-match', headers.has('if-none-match')
-            ? `${headers.get('if-none-match')}, ${this.#resHeaders.get('etag')}`
-            : this.#resHeaders.get('etag')!);
+            headers.set(
+                'if-none-match',
+                headers.has('if-none-match')
+                    ? `${headers.get('if-none-match')}, ${this.#resHeaders.get(
+                          'etag'
+                      )}`
+                    : this.#resHeaders.get('etag')!
+            );
         }
 
         // Clients MAY issue simple (non-subrange) GET requests with either weak validators or strong validators. Clients MUST NOT use weak validators in other forms of request.
@@ -599,13 +629,14 @@ export default class CachePolicy {
             headers.delete('if-modified-since');
 
             if (headers.has('if-none-match')) {
-                const etags = headers.get('if-none-match')!
+                const etags = headers
+                    .get('if-none-match')!
                     .split(/,/)
-                    .filter(etag => {
+                    .filter((etag) => {
                         return !/^\s*W\//.test(etag);
                     });
                 if (!etags.length) {
-                     headers.delete('if-none-match');
+                    headers.delete('if-none-match');
                 } else {
                     headers.set('if-none-match', etags.join(',').trim());
                 }
@@ -614,7 +645,10 @@ export default class CachePolicy {
             this.#resHeaders.has('last-modified') &&
             !headers.has('if-modified-since')
         ) {
-            headers.set('if-modified-since', this.#resHeaders.get('last-modified')!);
+            headers.set(
+                'if-modified-since',
+                this.#resHeaders.get('last-modified')!
+            );
         }
 
         return headers;
@@ -629,12 +663,13 @@ export default class CachePolicy {
      */
     revalidatedPolicy(request: Request, response: Response) {
         this.#assertRequestHasHeaders(request);
-        if(this.#useStaleIfError() && isErrorResponse(response)) {  // I consider the revalidation request unsuccessful
-          return {
-            modified: false,
-            matches: false,
-            policy: this,
-          };
+        if (this.#useStaleIfError() && isErrorResponse(response)) {
+            // I consider the revalidation request unsuccessful
+            return {
+                modified: false,
+                matches: false,
+                policy: this,
+            };
         }
         if (!response || !response.headers) {
             throw Error('Response headers missing');
@@ -656,7 +691,10 @@ export default class CachePolicy {
                 this.#resHeaders.has('etag') &&
                 this.#resHeaders.get('etag')!.replace(/^\s*W\//, '') ===
                     response.headers.get('etag');
-        } else if (this.#resHeaders.has('etag') && response.headers.has('etag')) {
+        } else if (
+            this.#resHeaders.has('etag') &&
+            response.headers.has('etag')
+        ) {
             // "If the new response contains a weak validator and that validator corresponds
             // to one of the cache's stored responses,
             // then the most recent of those matching stored responses is selected for update."
@@ -698,7 +736,7 @@ export default class CachePolicy {
         const headers: Record<string, string> = {};
         this.#resHeaders.forEach((v, k) => {
             headers[k] =
-            response.headers.has(k) && !excludedFromRevalidationUpdate[k]
+                response.headers.has(k) && !excludedFromRevalidationUpdate[k]
                     ? response.headers.get(k)!
                     : v;
         });
@@ -718,4 +756,4 @@ export default class CachePolicy {
             matches: true,
         };
     }
-};
+}

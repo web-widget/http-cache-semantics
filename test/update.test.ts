@@ -30,17 +30,20 @@ const cacheableResponse = new Response(null, {
     headers: { 'cache-control': 'max-age=111' },
 });
 const etaggedResponse = new Response(null, {
-    headers: mergeHeaders(new Headers({ etag: '"123456789"' }), cacheableResponse.headers),
+    headers: mergeHeaders(
+        new Headers({ etag: '"123456789"' }),
+        cacheableResponse.headers
+    ),
 });
 const weakTaggedResponse = new Response(null, {
-    headers: mergeHeaders(new Headers(
-        { etag: 'W/"123456789"' }),
+    headers: mergeHeaders(
+        new Headers({ etag: 'W/"123456789"' }),
         cacheableResponse.headers
     ),
 });
 const lastModifiedResponse = new Response(null, {
-    headers: mergeHeaders(new Headers(
-        { 'last-modified': 'Tue, 15 Nov 1994 12:45:26 GMT' }),
+    headers: mergeHeaders(
+        new Headers({ 'last-modified': 'Tue, 15 Nov 1994 12:45:26 GMT' }),
         cacheableResponse.headers
     ),
 });
@@ -87,7 +90,7 @@ function assertUpdates(
         headers: withHeaders(secondResponse, {
             foo: 'updated',
             'x-ignore-new': 'ignoreme',
-        }).headers
+        }).headers,
     });
 
     const headers = notModifiedResponseHeaders(

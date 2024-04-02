@@ -14,7 +14,7 @@ const simpleRequest = new Request(
 function simpleRequestBut(overrides: RequestInit) {
     return new Request(simpleRequest.url, {
         ...simpleRequest,
-        ...overrides
+        ...overrides,
     });
 }
 
@@ -30,7 +30,10 @@ const cacheableResponse = new Response(null, {
     headers: { 'cache-control': 'max-age=111' },
 });
 const etaggedResponse = new Response(null, {
-    headers: mergeHeaders(new Headers({ etag: '"123456789"' }), cacheableResponse.headers),
+    headers: mergeHeaders(
+        new Headers({ etag: '"123456789"' }),
+        cacheableResponse.headers
+    ),
 });
 const lastModifiedResponse = new Response(null, {
     headers: mergeHeaders(
@@ -45,7 +48,10 @@ const multiValidatorResponse = new Response(null, {
     ),
 });
 const alwaysVariableResponse = new Response(null, {
-    headers: mergeHeaders(new Headers({ vary: '*' }), cacheableResponse.headers),
+    headers: mergeHeaders(
+        new Headers({ vary: '*' }),
+        cacheableResponse.headers
+    ),
 });
 
 function assertHeadersPassed(headers: Headers) {
@@ -195,8 +201,9 @@ describe('Validation request', () => {
     test('must contain any etag', () => {
         const cache = new CachePolicy(simpleRequest, multiValidatorResponse);
         const expected = multiValidatorResponse.headers.get('etag');
-        const actual =
-            cache.revalidationHeaders(simpleRequest).get('if-none-match');
+        const actual = cache
+            .revalidationHeaders(simpleRequest)
+            .get('if-none-match');
         expect(actual).toBe(expected);
     });
 
@@ -217,8 +224,9 @@ describe('Validation request', () => {
     test('should send the Last-Modified value', () => {
         const cache = new CachePolicy(simpleRequest, multiValidatorResponse);
         const expected = multiValidatorResponse.headers.get('last-modified');
-        const actual =
-            cache.revalidationHeaders(simpleRequest).get('if-modified-since');
+        const actual = cache
+            .revalidationHeaders(simpleRequest)
+            .get('if-modified-since');
         expect(actual).toBe(expected);
     });
 
@@ -228,7 +236,9 @@ describe('Validation request', () => {
             headers: { 'if-modified-since': 'yesterday' },
         });
         const cache = new CachePolicy(postReq, lastModifiedResponse);
-        const actual = cache.revalidationHeaders(postReq).get('if-modified-since');
+        const actual = cache
+            .revalidationHeaders(postReq)
+            .get('if-modified-since');
         expect(actual).toBe(null);
     });
 
@@ -241,7 +251,9 @@ describe('Validation request', () => {
             },
         });
         const cache = new CachePolicy(rangeReq, lastModifiedResponse);
-        const actual = cache.revalidationHeaders(rangeReq).get('if-modified-since');
+        const actual = cache
+            .revalidationHeaders(rangeReq)
+            .get('if-modified-since');
         expect(actual).toBe(null);
     });
 });

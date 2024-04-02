@@ -75,7 +75,9 @@ describe('okhttp tests', () => {
 
     function assertCached(shouldPut: boolean, responseCode: number) {
         const mockResponse = new Response(
-            responseCode == 204 || responseCode == 205 || responseCode === 304 ? null : 'ABCDE',
+            responseCode == 204 || responseCode == 205 || responseCode === 304
+                ? null
+                : 'ABCDE',
             {
                 headers: {
                     'last-modified': formatDate(-1, 3600),
@@ -255,7 +257,7 @@ describe('okhttp tests', () => {
     });
 
     // Error: 'TRACE' HTTP method is unsupported.
-    // test('request method trace is not cached', () => {  
+    // test('request method trace is not cached', () => {
     //     testRequestMethodNotCached('TRACE');
     // });
 
