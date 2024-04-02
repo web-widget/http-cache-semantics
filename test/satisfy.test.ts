@@ -1,138 +1,189 @@
-'use strict';
+import CachePolicy from '../src';
 
-const assert = require('assert');
-const CachePolicy = require('..');
-
-describe('Satisfies', function() {
-    it('when URLs match', function() {
+describe('Satisfies', () => {
+    test('when URLs match', () => {
         const policy = new CachePolicy(
-            { url: '/', headers: {} },
-            { status: 200, headers: { 'cache-control': 'max-age=2' } }
+            new Request('http://localhost/'),
+            new Response(null, {
+                status: 200,
+                headers: { 'cache-control': 'max-age=2' },
+            })
         );
-        assert(policy.satisfiesWithoutRevalidation({ url: '/', headers: {} }));
+        expect(
+            policy.satisfiesWithoutRevalidation(
+                new Request('http://localhost/')
+            )
+        ).toBeTruthy();
     });
 
-    it('when expires is present', function() {
+    test('when expires is present', () => {
         const policy = new CachePolicy(
-            { headers: {} },
-            {
+            new Request('http://localhost/'),
+            new Response(null, {
                 status: 302,
-                headers: { expires: new Date(Date.now() + 2000).toGMTString() },
-            }
-        );
-        assert(policy.satisfiesWithoutRevalidation({ headers: {} }));
-    });
-
-    it('not when URLs mismatch', function() {
-        const policy = new CachePolicy(
-            { url: '/foo', headers: {} },
-            { status: 200, headers: { 'cache-control': 'max-age=2' } }
-        );
-        assert(
-            !policy.satisfiesWithoutRevalidation({
-                url: '/foo?bar',
-                headers: {},
+                headers: { expires: new Date(Date.now() + 2000).toUTCString() },
             })
         );
+        expect(
+            policy.satisfiesWithoutRevalidation(
+                new Request('http://localhost/')
+            )
+        ).toBeTruthy();
     });
 
-    it('when methods match', function() {
+    test('not when URLs mismatch', () => {
         const policy = new CachePolicy(
-            { method: 'GET', headers: {} },
-            { status: 200, headers: { 'cache-control': 'max-age=2' } }
-        );
-        assert(
-            policy.satisfiesWithoutRevalidation({ method: 'GET', headers: {} })
-        );
-    });
-
-    it('not when hosts mismatch', function() {
-        const policy = new CachePolicy(
-            { headers: { host: 'foo' } },
-            { status: 200, headers: { 'cache-control': 'max-age=2' } }
-        );
-        assert(
-            policy.satisfiesWithoutRevalidation({ headers: { host: 'foo' } })
-        );
-        assert(
-            !policy.satisfiesWithoutRevalidation({
-                headers: { host: 'foofoo' },
+            new Request('http://localhost/foo'),
+            new Response(null, {
+                status: 200,
+                headers: { 'cache-control': 'max-age=2' },
             })
         );
+        expect(
+            policy.satisfiesWithoutRevalidation(
+                new Request('http://localhost/foo?bar')
+            )
+        ).toBeFalsy();
     });
 
-    it('when methods match HEAD', function() {
+    test('when methods match', () => {
         const policy = new CachePolicy(
-            { method: 'HEAD', headers: {} },
-            { status: 200, headers: { 'cache-control': 'max-age=2' } }
+            new Request('http://localhost/'),
+            new Response(null, {
+                status: 200,
+                headers: { 'cache-control': 'max-age=2' },
+            })
         );
-        assert(
-            policy.satisfiesWithoutRevalidation({ method: 'HEAD', headers: {} })
-        );
+        expect(
+            policy.satisfiesWithoutRevalidation(
+                new Request('http://localhost/')
+            )
+        ).toBeTruthy();
     });
 
-    it('not when methods mismatch', function() {
+    test('not when hosts mismatch', () => {
         const policy = new CachePolicy(
-            { method: 'POST', headers: {} },
-            { status: 200, headers: { 'cache-control': 'max-age=2' } }
+            new Request('http://localhost/', { headers: { host: 'foo' } }),
+            new Response(null, {
+                status: 200,
+                headers: { 'cache-control': 'max-age=2' },
+            })
         );
-        assert(
-            !policy.satisfiesWithoutRevalidation({ method: 'GET', headers: {} })
-        );
+        expect(
+            policy.satisfiesWithoutRevalidation(
+                new Request('http://localhost/', { headers: { host: 'foo' } })
+            )
+        ).toBeTruthy();
+        expect(
+            policy.satisfiesWithoutRevalidation(
+                new Request('http://localhost/', {
+                    headers: { host: 'foofoo' },
+                })
+            )
+        ).toBeFalsy();
     });
 
-    it('not when methods mismatch HEAD', function() {
+    test('when methods match HEAD', () => {
         const policy = new CachePolicy(
-            { method: 'HEAD', headers: {} },
-            { status: 200, headers: { 'cache-control': 'max-age=2' } }
+            new Request('http://localhost/', { method: 'HEAD' }),
+            new Response(null, {
+                status: 200,
+                headers: { 'cache-control': 'max-age=2' },
+            })
         );
-        assert(
-            !policy.satisfiesWithoutRevalidation({ method: 'GET', headers: {} })
-        );
+        expect(
+            policy.satisfiesWithoutRevalidation(
+                new Request('http://localhost/', { method: 'HEAD' })
+            )
+        ).toBeTruthy();
     });
 
-    it('not when proxy revalidating', function() {
+    test('not when methods mismatch', () => {
         const policy = new CachePolicy(
-            { headers: {} },
-            {
+            new Request('http://localhost/', { method: 'POST', headers: {} }),
+            new Response(null, {
+                status: 200,
+                headers: { 'cache-control': 'max-age=2' },
+            })
+        );
+        expect(
+            policy.satisfiesWithoutRevalidation(
+                new Request('http://localhost/')
+            )
+        ).toBeFalsy();
+    });
+
+    test('not when methods mismatch HEAD', () => {
+        const policy = new CachePolicy(
+            new Request('http://localhost/', { method: 'HEAD', headers: {} }),
+            new Response(null, {
+                status: 200,
+                headers: { 'cache-control': 'max-age=2' },
+            })
+        );
+        expect(
+            policy.satisfiesWithoutRevalidation(
+                new Request('http://localhost/')
+            )
+        ).toBeFalsy();
+    });
+
+    test('not when proxy revalidating', () => {
+        const policy = new CachePolicy(
+            new Request('http://localhost/'),
+            new Response(null, {
                 status: 200,
                 headers: { 'cache-control': 'max-age=2, proxy-revalidate ' },
-            }
+            })
         );
-        assert(!policy.satisfiesWithoutRevalidation({ headers: {} }));
+        expect(
+            policy.satisfiesWithoutRevalidation(
+                new Request('http://localhost/')
+            )
+        ).toBeFalsy();
     });
 
-    it('when not a proxy revalidating', function() {
+    test('when not a proxy revalidating', () => {
         const policy = new CachePolicy(
-            { headers: {} },
-            {
+            new Request('http://localhost/'),
+            new Response(null, {
                 status: 200,
                 headers: { 'cache-control': 'max-age=2, proxy-revalidate ' },
-            },
+            }),
             { shared: false }
         );
-        assert(policy.satisfiesWithoutRevalidation({ headers: {} }));
+        expect(
+            policy.satisfiesWithoutRevalidation(
+                new Request('http://localhost/')
+            )
+        ).toBeTruthy();
     });
 
-    it('not when no-cache requesting', function() {
+    test('not when no-cache requesting', () => {
         const policy = new CachePolicy(
-            { headers: {} },
-            { headers: { 'cache-control': 'max-age=2' } }
+            new Request('http://localhost/'),
+            new Response(null, { headers: { 'cache-control': 'max-age=2' } })
         );
-        assert(
-            policy.satisfiesWithoutRevalidation({
-                headers: { 'cache-control': 'fine' },
-            })
-        );
-        assert(
-            !policy.satisfiesWithoutRevalidation({
-                headers: { 'cache-control': 'no-cache' },
-            })
-        );
-        assert(
-            !policy.satisfiesWithoutRevalidation({
-                headers: { pragma: 'no-cache' },
-            })
-        );
+        expect(
+            policy.satisfiesWithoutRevalidation(
+                new Request('http://localhost/', {
+                    headers: { 'cache-control': 'fine' },
+                })
+            )
+        ).toBeTruthy();
+        expect(
+            policy.satisfiesWithoutRevalidation(
+                new Request('http://localhost/', {
+                    headers: { 'cache-control': 'no-cache' },
+                })
+            )
+        ).toBeFalsy();
+        expect(
+            policy.satisfiesWithoutRevalidation(
+                new Request('http://localhost/', {
+                    headers: { pragma: 'no-cache' },
+                })
+            )
+        ).toBeFalsy();
     });
 });
