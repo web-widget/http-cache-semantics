@@ -60,7 +60,7 @@ function parseCacheControl(header: string | null) {
 }
 
 function formatCacheControl(cc: Record<string, boolean | string>) {
-  let parts = [];
+  const parts = [];
   for (const k in cc) {
     const v = cc[k];
     parts.push(v === true ? k : k + '=' + v);
@@ -71,7 +71,7 @@ function formatCacheControl(cc: Record<string, boolean | string>) {
   return parts.join(', ');
 }
 
-export type Options = {
+export interface Options {
   /**
    * If `true`, then the response is evaluated from a perspective of a shared cache (i.e. `private` is not
    * cacheable and `s-maxage` is respected). If `false`, then the response is evaluated from a perspective
@@ -108,9 +108,9 @@ export type Options = {
    */
   trustServerDate?: boolean;
   _fromObject?: CachePolicyObject;
-};
+}
 
-export type CachePolicyObject = {
+export interface CachePolicyObject {
   v: number;
   t: number;
   sh: boolean;
@@ -125,9 +125,9 @@ export type CachePolicyObject = {
   a: boolean;
   reqh: Record<string, string> | null;
   reqcc: Record<string, string | boolean>;
-};
+}
 
-export type RevalidationPolicy = {
+export interface RevalidationPolicy {
   /**
    * A new `CachePolicy` with HTTP headers updated from `revalidationResponse`. You can always replace
    * the old cached `CachePolicy` with the new one.
@@ -144,14 +144,14 @@ export type RevalidationPolicy = {
    */
   modified: boolean;
   matches: boolean;
-};
+}
 
-export type CacheQueryOptions = {
+export interface CacheQueryOptions {
   ignoreRequestCacheControl?: boolean;
   // ignoreMethod?: boolean;
   ignoreSearch?: boolean;
   // ignoreVary?: boolean;
-};
+}
 
 export default class CachePolicy {
   #responseTime: number;
@@ -495,7 +495,7 @@ export default class CachePolicy {
    * May be fractional.
    */
   age() {
-    let age = this.#ageValue();
+    const age = this.#ageValue();
 
     const residentTime = (this.now() - this.#responseTime) / 1000;
     return age + residentTime;
