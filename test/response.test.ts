@@ -155,7 +155,6 @@ describe('Response headers', () => {
           expires: new Date(now).toUTCString(),
         },
       }),
-      // @ts-ignore
       { trustServerDate: false }
     );
     expect(cache.maxAge()).toBe(3);
