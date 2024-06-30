@@ -3,6 +3,7 @@ import CachePolicy from '../src';
 describe('Other', () => {
   test('Thaw wrong object', () => {
     expect(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       CachePolicy.fromObject({} as any);
     }).toThrow();
   });
@@ -73,7 +74,6 @@ describe('Other', () => {
 
     const c = new CachePolicy(req, res, {
       shared: false,
-      // @ts-ignore
       trustServerDate: false,
     });
     expect(c.satisfiesWithoutRevalidation(req)).toBeTruthy();
