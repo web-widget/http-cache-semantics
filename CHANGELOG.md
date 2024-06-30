@@ -1,5 +1,11 @@
 # @web-widget/http-cache-semantics
 
+## 1.2.0
+
+### Minor Changes
+
+- bf77ffd: Support `ignoreMethod` and `ignoreVary` options.
+
 ## 1.1.0
 
 ### Minor Changes
