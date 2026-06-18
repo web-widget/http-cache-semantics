@@ -52,6 +52,8 @@ The key method is `satisfiesWithoutRevalidation(newRequest)`, which checks wheth
 
 ### Constructor options
 
+This fork uses Web Standards [`Request`](https://developer.mozilla.org/en-US/docs/Web/API/Request) and [`Response`](https://developer.mozilla.org/en-US/docs/Web/API/Response) objects.
+
 ```js
 const request = new Request('http://localhost/', {
     method: 'GET',

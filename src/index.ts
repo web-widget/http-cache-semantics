@@ -100,13 +100,6 @@ export interface Options {
    * @default false
    */
   ignoreCargoCult?: boolean;
-  /**
-   * If `false`, then server's `Date` header won't be used as the base for `max-age`. This is against the RFC,
-   * but it's useful if you want to cache responses with very short `max-age`, but your local clock
-   * is not exactly in sync with the server's.
-   * @default true
-   */
-  trustServerDate?: boolean;
   _fromObject?: CachePolicyObject;
 }
 
@@ -147,13 +140,6 @@ export interface RevalidationPolicy {
   matches: boolean;
 }
 
-export interface CacheQueryOptions {
-  ignoreRequestCacheControl?: boolean;
-  ignoreMethod?: boolean;
-  ignoreSearch?: boolean;
-  ignoreVary?: boolean;
-}
-
 export interface EvaluateRequestRevalidation {
   headers: Headers;
   synchronous: boolean;
@@ -164,8 +150,8 @@ export interface EvaluateRequestResponse {
 }
 
 export interface EvaluateRequestResult {
-  revalidation?: EvaluateRequestRevalidation;
-  response?: EvaluateRequestResponse;
+  revalidation?: EvaluateRequestRevalidation | undefined;
+  response?: EvaluateRequestResponse | undefined;
 }
 
 export default class CachePolicy {
@@ -226,7 +212,7 @@ export default class CachePolicy {
     // Assume that if someone uses legacy, non-standard uncecessary options they don't understand caching,
     // so there's no point stricly adhering to the blindly copy&pasted directives.
     if (
-      ignoreCargoCult &&
+      this.#ignoreCargoCult &&
       'pre-check' in this.#resCacheControl &&
       'post-check' in this.#resCacheControl
     ) {
@@ -322,8 +308,9 @@ export default class CachePolicy {
    *
    * This doesn't support `stale-while-revalidate`. See `evaluateRequest()` for a more complete solution.
    */
-  satisfiesWithoutRevalidation(req: Request, opt?: CacheQueryOptions): boolean {
-    return !this.evaluateRequest(req, opt).revalidation;
+  satisfiesWithoutRevalidation(req: Request): boolean {
+    const result = this.evaluateRequest(req);
+    return !result.revalidation;
   }
 
   #evaluateRequestHitResult(
@@ -339,45 +326,34 @@ export default class CachePolicy {
 
   #evaluateRequestRevalidation(
     req: Request,
-    synchronous: boolean,
-    opt?: CacheQueryOptions
+    synchronous: boolean
   ): EvaluateRequestRevalidation {
     return {
       synchronous,
-      headers: this.revalidationHeaders(req, opt),
+      headers: this.revalidationHeaders(req),
     };
   }
 
-  #evaluateRequestMissResult(
-    req: Request,
-    opt?: CacheQueryOptions
-  ): EvaluateRequestResult {
+  #evaluateRequestMissResult(req: Request): EvaluateRequestResult {
     return {
       response: undefined,
-      revalidation: this.#evaluateRequestRevalidation(req, true, opt),
+      revalidation: this.#evaluateRequestRevalidation(req, true),
     };
   }
 
   /**
    * Checks if the given request matches this cache entry, and how the cache can be used to satisfy it.
    */
-  evaluateRequest(
-    req: Request,
-    opt?: CacheQueryOptions
-  ): EvaluateRequestResult {
+  evaluateRequest(req: Request): EvaluateRequestResult {
     this.#assertRequestHasHeaders(req);
 
     // In all circumstances, a cache MUST NOT ignore the must-revalidate directive
     if (this.#resCacheControl['must-revalidate']) {
-      return this.#evaluateRequestMissResult(req, opt);
+      return this.#evaluateRequestMissResult(req);
     }
 
-    if (!this.#requestCacheKeyMatches(req, false, opt)) {
-      return this.#evaluateRequestMissResult(req, opt);
-    }
-
-    if (opt?.ignoreRequestCacheControl) {
-      return this.#evaluateRequestHitResult(undefined);
+    if (!this.#requestMatches(req, false)) {
+      return this.#evaluateRequestMissResult(req);
     }
 
     // When presented with a request, a cache MUST NOT reuse a stored response, unless:
@@ -389,14 +365,14 @@ export default class CachePolicy {
       reqCacheControl['no-cache'] ||
       /no-cache/.test(req.headers.get('pragma') ?? '')
     ) {
-      return this.#evaluateRequestMissResult(req, opt);
+      return this.#evaluateRequestMissResult(req);
     }
 
     if (
       reqCacheControl['max-age'] &&
       this.age() > toNumberOrZero(reqCacheControl['max-age'] as string)
     ) {
-      return this.#evaluateRequestMissResult(req, opt);
+      return this.#evaluateRequestMissResult(req);
     }
 
     if (
@@ -404,7 +380,7 @@ export default class CachePolicy {
       this.maxAge() - this.age() <
         toNumberOrZero(reqCacheControl['min-fresh'] as string)
     ) {
-      return this.#evaluateRequestMissResult(req, opt);
+      return this.#evaluateRequestMissResult(req);
     }
 
     // the stored response is either:
@@ -421,66 +397,35 @@ export default class CachePolicy {
 
       if (this.useStaleWhileRevalidate()) {
         return this.#evaluateRequestHitResult(
-          this.#evaluateRequestRevalidation(req, false, opt)
+          this.#evaluateRequestRevalidation(req, false)
         );
       }
 
-      return this.#evaluateRequestMissResult(req, opt);
+      return this.#evaluateRequestMissResult(req);
     }
 
     return this.#evaluateRequestHitResult(undefined);
   }
 
-  #requestCacheKeyMatches(
-    req: Request,
-    allowHeadMethod: boolean,
-    opt?: CacheQueryOptions
-  ) {
-    return (
-      // The presented effective request URI and that of the stored response match, and
-      this.#urlMatches(req, opt?.ignoreSearch) &&
-      // the request method associated with the stored response allows it to be used for the presented request, and
-      this.#methodMatches(req, allowHeadMethod, opt?.ignoreMethod) &&
-      // selecting header fields nominated by the stored response (if any) match those presented, and
-      this.#varyMatches(req, opt?.ignoreVary)
+  #requestMatches(req: Request, allowHeadMethod: boolean) {
+    return !!(
+      this.#url.href === new URL(req.url).href &&
+      this.#host === req.headers.get('host') &&
+      (this.#method === req.method ||
+        (allowHeadMethod && 'HEAD' === req.method)) &&
+      this.#varyMatches(req)
     );
   }
 
   #allowsStoringAuthenticated() {
-    //  following Cache-Control response directives (Section 5.2.2) have such an effect: must-revalidate, public, and s-maxage.
-    return (
+    return !!(
       this.#resCacheControl['must-revalidate'] ||
       this.#resCacheControl.public ||
       this.#resCacheControl['s-maxage']
     );
   }
 
-  #urlMatches(req: Request, ignoreSearch?: boolean) {
-    const url = new URL(req.url);
-    return (
-      (ignoreSearch
-        ? this.#url.origin + this.#url.pathname === url.origin + url.pathname
-        : this.#url.href === url.href) && this.#host === req.headers.get('host')
-    );
-  }
-
-  #methodMatches(
-    req: Request,
-    allowHeadMethod?: boolean,
-    ignoreMethod?: boolean
-  ) {
-    return (
-      ignoreMethod ||
-      this.#method === req.method ||
-      (allowHeadMethod ? 'HEAD' === req.method : false)
-    );
-  }
-
-  #varyMatches(req: Request, ignoreVary?: boolean) {
-    if (ignoreVary) {
-      return true;
-    }
-
+  #varyMatches(req: Request) {
     if (!this.#resHeaders.has('vary')) {
       return true;
     }
@@ -658,11 +603,10 @@ export default class CachePolicy {
   }
 
   /**
-   * Returns approximate time in milliseconds until the response becomes stale (i.e. not fresh).
+   * Remaining time this cache entry may be useful for, in *milliseconds*.
+   * You can use this as an expiration time for your cache storage.
    *
-   * After that time (when `timeToLive() <= 0`) the response might not be usable without revalidation. However,
-   * there are exceptions, e.g. a client can explicitly allow stale responses, so always check with
-   * `satisfiesWithoutRevalidation()`.
+   * Prefer this method over `maxAge()`, because it includes other factors like `age` and `stale-while-revalidate`.
    */
   timeToLive() {
     const age = this.maxAge() - this.age();
@@ -676,11 +620,15 @@ export default class CachePolicy {
     );
   }
 
+  /**
+   * If true, this cache entry is past its expiration date.
+   * Note that stale cache may be useful sometimes, see `evaluateRequest()`.
+   */
   stale() {
     return this.maxAge() <= this.age();
   }
 
-  useStaleIfError() {
+  #useStaleIfError() {
     return (
       this.maxAge() +
         toNumberOrZero(this.#resCacheControl['stale-if-error'] as string) >
@@ -688,6 +636,7 @@ export default class CachePolicy {
     );
   }
 
+  /** See `evaluateRequest()` for a more complete solution. */
   useStaleWhileRevalidate() {
     const swr = toNumberOrZero(
       this.#resCacheControl['stale-while-revalidate'] as string
@@ -762,14 +711,14 @@ export default class CachePolicy {
    * @example
    * updateRequest.headers = cachePolicy.revalidationHeaders(updateRequest);
    */
-  revalidationHeaders(req: Request, opt?: CacheQueryOptions) {
+  revalidationHeaders(req: Request) {
     this.#assertRequestHasHeaders(req);
     const headers = this.#copyWithoutHopByHopHeaders(req.headers);
 
     // This implementation does not understand range requests
     headers.delete('if-range');
 
-    if (!this.#requestCacheKeyMatches(req, true, opt) || !this.storable()) {
+    if (!this.#requestMatches(req, true) || !this.storable()) {
       // revalidation allowed via HEAD
       // not for the same resource, or wasn't allowed to be cached anyway
       headers.delete('if-none-match');
@@ -833,7 +782,7 @@ export default class CachePolicy {
    */
   revalidatedPolicy(request: Request, response: Response): RevalidationPolicy {
     this.#assertRequestHasHeaders(request);
-    if (this.useStaleIfError() && isErrorResponse(response)) {
+    if (this.#useStaleIfError() && isErrorResponse(response)) {
       return {
         modified: false,
         matches: true,
@@ -847,7 +796,7 @@ export default class CachePolicy {
     // These aren't going to be supported exactly, since one CachePolicy object
     // doesn't know about all the other cached objects.
     let matches = false;
-    if (response.status !== 304) {
+    if (response.status != 304) {
       matches = false;
     } else if (
       response.headers.has('etag') &&
@@ -899,7 +848,7 @@ export default class CachePolicy {
         // Client receiving 304 without body, even if it's invalid/mismatched has no option
         // but to reuse a cached body. We don't have a good way to tell clients to do
         // error recovery in such case.
-        modified: response.status !== 304,
+        modified: response.status != 304,
         matches: false,
       };
     }

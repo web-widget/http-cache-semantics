@@ -74,7 +74,6 @@ describe('Other', () => {
 
     const c = new CachePolicy(req, res, {
       shared: false,
-      trustServerDate: false,
     });
     expect(c.satisfiesWithoutRevalidation(req)).toBeTruthy();
   });

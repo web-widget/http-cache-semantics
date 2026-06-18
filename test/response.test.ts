@@ -145,21 +145,6 @@ describe('Response headers', () => {
     expect(cache.maxAge()).toBe(3);
   });
 
-  test('cache with expires always relative to date', () => {
-    const now = Date.now();
-    const cache = new CachePolicy(
-      req,
-      new Response(null, {
-        headers: {
-          date: new Date(now - 3000).toUTCString(),
-          expires: new Date(now).toUTCString(),
-        },
-      }),
-      { trustServerDate: false }
-    );
-    expect(cache.maxAge()).toBe(3);
-  });
-
   test('cache expires no date', () => {
     const cache = new CachePolicy(
       req,
