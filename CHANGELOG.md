@@ -1,5 +1,15 @@
 # @web-widget/http-cache-semantics
 
+## 2.0.0
+
+### Major Changes
+
+- bb77a6b: Merge upstream kornelski/http-cache-semantics v4.2.0: add `evaluateRequest()` for stale-while-revalidate support, fix min-fresh and must-revalidate handling, and preserve constructor options in `revalidatedPolicy()`.
+
+  Remove unused `trustServerDate` option.
+
+  **Breaking:** Remove `CacheQueryOptions` and public `useStaleIfError()`. Normalize the `Request` at the cache layer before calling `evaluateRequest()`; use `revalidatedPolicy()` for stale-if-error handling.
+
 ## 1.2.0
 
 ### Minor Changes
