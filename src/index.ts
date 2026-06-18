@@ -116,6 +116,7 @@ export interface CachePolicyObject {
   sh: boolean;
   ch: number;
   imm: number;
+  icc?: boolean;
   st: number;
   resh: Record<string, string>;
   rescc: Record<string, string | boolean>;
@@ -153,11 +154,26 @@ export interface CacheQueryOptions {
   ignoreVary?: boolean;
 }
 
+export interface EvaluateRequestRevalidation {
+  headers: Headers;
+  synchronous: boolean;
+}
+
+export interface EvaluateRequestResponse {
+  headers: Headers;
+}
+
+export interface EvaluateRequestResult {
+  revalidation?: EvaluateRequestRevalidation;
+  response?: EvaluateRequestResponse;
+}
+
 export default class CachePolicy {
   #responseTime: number;
   #isShared: boolean;
   #cacheHeuristic: number;
   #immutableMinTtl: number;
+  #ignoreCargoCult: boolean;
   #status: number;
   #resHeaders: Headers;
   #resCacheControl: Record<string, string | boolean>;
@@ -195,6 +211,7 @@ export default class CachePolicy {
       undefined !== immutableMinTimeToLive
         ? immutableMinTimeToLive
         : 24 * 3600 * 1000;
+    this.#ignoreCargoCult = !!ignoreCargoCult;
 
     this.#status = res.status;
     this.#resHeaders = res.headers;
@@ -300,69 +317,118 @@ export default class CachePolicy {
   }
 
   /**
-   * This is the most important method. Use this method to check whether the cached response is still fresh
-   * in the context of the new request.
+   * Checks if the request matches the cache and can be satisfied from the cache immediately,
+   * without having to make a request to the server.
    *
-   * If it returns `true`, then the given `request` matches the original response this cache policy has been
-   * created with, and the response can be reused without contacting the server. Note that the old response
-   * can't be returned without being updated, see `responseHeaders()`.
-   *
-   * If it returns `false`, then the response may not be matching at all (e.g. it's for a different URL or method),
-   * or may require to be refreshed first (see `revalidationHeaders()`).
+   * This doesn't support `stale-while-revalidate`. See `evaluateRequest()` for a more complete solution.
    */
   satisfiesWithoutRevalidation(req: Request, opt?: CacheQueryOptions): boolean {
-    this.#assertRequestHasHeaders(req);
-
-    if (
-      !opt?.ignoreRequestCacheControl &&
-      !this.#requestCacheControlMatches(req)
-    ) {
-      return false;
-    }
-
-    return this.#requestCacheKeyMatches(req, false, opt);
+    return !this.evaluateRequest(req, opt).revalidation;
   }
 
-  #requestCacheControlMatches(req: Request) {
+  #evaluateRequestHitResult(
+    revalidation?: EvaluateRequestRevalidation
+  ): EvaluateRequestResult {
+    return {
+      response: {
+        headers: this.responseHeaders(),
+      },
+      revalidation,
+    };
+  }
+
+  #evaluateRequestRevalidation(
+    req: Request,
+    synchronous: boolean,
+    opt?: CacheQueryOptions
+  ): EvaluateRequestRevalidation {
+    return {
+      synchronous,
+      headers: this.revalidationHeaders(req, opt),
+    };
+  }
+
+  #evaluateRequestMissResult(
+    req: Request,
+    opt?: CacheQueryOptions
+  ): EvaluateRequestResult {
+    return {
+      response: undefined,
+      revalidation: this.#evaluateRequestRevalidation(req, true, opt),
+    };
+  }
+
+  /**
+   * Checks if the given request matches this cache entry, and how the cache can be used to satisfy it.
+   */
+  evaluateRequest(
+    req: Request,
+    opt?: CacheQueryOptions
+  ): EvaluateRequestResult {
+    this.#assertRequestHasHeaders(req);
+
+    // In all circumstances, a cache MUST NOT ignore the must-revalidate directive
+    if (this.#resCacheControl['must-revalidate']) {
+      return this.#evaluateRequestMissResult(req, opt);
+    }
+
+    if (!this.#requestCacheKeyMatches(req, false, opt)) {
+      return this.#evaluateRequestMissResult(req, opt);
+    }
+
+    if (opt?.ignoreRequestCacheControl) {
+      return this.#evaluateRequestHitResult(undefined);
+    }
+
     // When presented with a request, a cache MUST NOT reuse a stored response, unless:
     // the presented request does not contain the no-cache pragma (Section 5.4), nor the no-cache cache directive,
     // unless the stored response is successfully validated (Section 4.3), and
     const reqCacheControl = parseCacheControl(req.headers.get('cache-control'));
+
     if (
       reqCacheControl['no-cache'] ||
       /no-cache/.test(req.headers.get('pragma') ?? '')
     ) {
-      return false;
+      return this.#evaluateRequestMissResult(req, opt);
     }
 
     if (
       reqCacheControl['max-age'] &&
-      this.age() > Number(reqCacheControl['max-age'])
+      this.age() > toNumberOrZero(reqCacheControl['max-age'] as string)
     ) {
-      return false;
+      return this.#evaluateRequestMissResult(req, opt);
     }
 
     if (
       reqCacheControl['min-fresh'] &&
-      this.timeToLive() < 1000 * Number(reqCacheControl['min-fresh'])
+      this.maxAge() - this.age() <
+        toNumberOrZero(reqCacheControl['min-fresh'] as string)
     ) {
-      return false;
+      return this.#evaluateRequestMissResult(req, opt);
     }
 
     // the stored response is either:
     // fresh, or allowed to be served stale
     if (this.stale()) {
-      const allowsStale =
-        reqCacheControl['max-stale'] &&
-        !this.#resCacheControl['must-revalidate'] &&
+      const allowsStaleWithoutRevalidation =
+        'max-stale' in reqCacheControl &&
         (true === reqCacheControl['max-stale'] ||
           Number(reqCacheControl['max-stale']) > this.age() - this.maxAge());
-      if (!allowsStale) {
-        return false;
+
+      if (allowsStaleWithoutRevalidation) {
+        return this.#evaluateRequestHitResult(undefined);
       }
+
+      if (this.useStaleWhileRevalidate()) {
+        return this.#evaluateRequestHitResult(
+          this.#evaluateRequestRevalidation(req, false, opt)
+        );
+      }
+
+      return this.#evaluateRequestMissResult(req, opt);
     }
 
-    return true;
+    return this.#evaluateRequestHitResult(undefined);
   }
 
   #requestCacheKeyMatches(
@@ -623,13 +689,10 @@ export default class CachePolicy {
   }
 
   useStaleWhileRevalidate() {
-    return (
-      this.maxAge() +
-        toNumberOrZero(
-          this.#resCacheControl['stale-while-revalidate'] as string
-        ) >
-      this.age()
+    const swr = toNumberOrZero(
+      this.#resCacheControl['stale-while-revalidate'] as string
     );
+    return swr > 0 && this.maxAge() + swr > this.age();
   }
 
   /**
@@ -651,6 +714,7 @@ export default class CachePolicy {
     this.#isShared = obj.sh;
     this.#cacheHeuristic = obj.ch;
     this.#immutableMinTtl = obj.imm !== undefined ? obj.imm : 24 * 3600 * 1000;
+    this.#ignoreCargoCult = !!obj.icc;
     this.#status = obj.st;
     this.#resHeaders = new Headers(obj.resh);
     this.#resCacheControl = obj.rescc;
@@ -673,6 +737,7 @@ export default class CachePolicy {
       sh: this.#isShared,
       ch: this.#cacheHeuristic,
       imm: this.#immutableMinTtl,
+      icc: this.#ignoreCargoCult,
       st: this.#status,
       resh: Object.fromEntries(this.#resHeaders.entries()),
       rescc: this.#resCacheControl,
@@ -769,10 +834,9 @@ export default class CachePolicy {
   revalidatedPolicy(request: Request, response: Response): RevalidationPolicy {
     this.#assertRequestHasHeaders(request);
     if (this.useStaleIfError() && isErrorResponse(response)) {
-      // I consider the revalidation request unsuccessful
       return {
         modified: false,
-        matches: false,
+        matches: true,
         policy: this,
       };
     }
@@ -822,9 +886,16 @@ export default class CachePolicy {
       }
     }
 
+    const optionsCopy = {
+      shared: this.#isShared,
+      cacheHeuristic: this.#cacheHeuristic,
+      immutableMinTimeToLive: this.#immutableMinTtl,
+      ignoreCargoCult: this.#ignoreCargoCult,
+    };
+
     if (!matches) {
       return {
-        policy: new CachePolicy(request, response),
+        policy: new CachePolicy(request, response, optionsCopy),
         // Client receiving 304 without body, even if it's invalid/mismatched has no option
         // but to reuse a cached body. We don't have a good way to tell clients to do
         // error recovery in such case.
@@ -849,11 +920,7 @@ export default class CachePolicy {
       headers,
     });
     return {
-      policy: new CachePolicy(request, newResponse, {
-        shared: this.#isShared,
-        cacheHeuristic: this.#cacheHeuristic,
-        immutableMinTimeToLive: this.#immutableMinTtl,
-      }),
+      policy: new CachePolicy(request, newResponse, optionsCopy),
       modified: false,
       matches: true,
     };
