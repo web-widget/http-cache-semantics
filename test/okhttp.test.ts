@@ -436,6 +436,41 @@ describe('okhttp tests', () => {
     ).toBeFalsy();
   });
 
+  test('fresh must-revalidate may be served without revalidation', () => {
+    const cache = new CachePolicy(
+      new Request('http://localhost/'),
+      new Response(null, {
+        headers: { 'cache-control': 'max-age=300, must-revalidate' },
+      })
+    );
+
+    expect(cache.stale()).toBe(false);
+    expect(
+      cache.satisfiesWithoutRevalidation(new Request('http://localhost/'))
+    ).toBe(true);
+
+    const result = cache.evaluateRequest(new Request('http://localhost/'));
+    expect(result.revalidation).toBeUndefined();
+    expect(result.response).toBeDefined();
+  });
+
+  test('stale must-revalidate requires revalidation', () => {
+    const cache = new CachePolicy(
+      new Request('http://localhost/'),
+      new Response(null, {
+        headers: {
+          'cache-control': 'max-age=120, must-revalidate',
+          age: '360',
+        },
+      })
+    );
+
+    expect(cache.stale()).toBe(true);
+    const result = cache.evaluateRequest(new Request('http://localhost/'));
+    expect(result.revalidation?.synchronous).toBe(true);
+    expect(result.response).toBeUndefined();
+  });
+
   test('request max stale not honored with must revalidate', () => {
     const cache = new CachePolicy(
       new Request('http://localhost/'),

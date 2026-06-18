@@ -347,11 +347,6 @@ export default class CachePolicy {
   evaluateRequest(req: Request): EvaluateRequestResult {
     this.#assertRequestHasHeaders(req);
 
-    // In all circumstances, a cache MUST NOT ignore the must-revalidate directive
-    if (this.#resCacheControl['must-revalidate']) {
-      return this.#evaluateRequestMissResult(req);
-    }
-
     if (!this.#requestMatches(req, false)) {
       return this.#evaluateRequestMissResult(req);
     }
@@ -388,6 +383,7 @@ export default class CachePolicy {
     if (this.stale()) {
       const allowsStaleWithoutRevalidation =
         'max-stale' in reqCacheControl &&
+        !this.#resCacheControl['must-revalidate'] &&
         (true === reqCacheControl['max-stale'] ||
           Number(reqCacheControl['max-stale']) > this.age() - this.maxAge());
 
